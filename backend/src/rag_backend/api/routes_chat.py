@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from rag_backend.llm_model.client import LlmClient, llm_client
 from rag_backend.schemas.chat import ChatRequest, Citation
 from rag_backend.storage import dummy_store
 
 router = APIRouter(tags=["chat"])
 
 # Separates the streamed answer text from the trailing citations payload.
-# The real (non-dummy) retrieval pipeline will replace this with proper SSE events.
+# The real retrieval pipeline will replace this with proper SSE events.
 _CITATIONS_MARKER = "\x00CITATIONS:"
-
-_WORD_DELAY_SECONDS = 0.04
 
 
 def _pick_citations(message: str, limit: int = 2) -> list[Citation]:
@@ -41,17 +39,30 @@ def _pick_citations(message: str, limit: int = 2) -> list[Citation]:
     ]
 
 
-def _build_answer(citations: list[Citation]) -> str:
+def _build_system_prompt(citations: list[Citation]) -> str:
     if not citations:
-        return "I don't know based on the available documents."
-    excerpt_sentences = " ".join(c.excerpt for c in citations)
-    return f"Based on the available documents: {excerpt_sentences}"
+        return (
+            "You are a helpful assistant. No relevant documents were found for this "
+            "question. Tell the user you don't know based on the available documents."
+        )
+    context = "\n".join(f"[{i + 1}] ({c.filename}) {c.excerpt}" for i, c in enumerate(citations))
+    return (
+        "You are a helpful assistant that answers questions using ONLY the context below. "
+        "Keep answers brief. If the context doesn't contain the answer, say you don't know.\n\n"
+        f"Context:\n{context}"
+    )
 
 
-async def _stream_answer(answer: str, citations: list[Citation]) -> AsyncIterator[bytes]:
-    for word in answer.split(" "):
-        yield f"{word} ".encode("utf-8")
-        await asyncio.sleep(_WORD_DELAY_SECONDS)
+async def _stream_answer(
+    message: str, citations: list[Citation], client: LlmClient
+) -> AsyncIterator[bytes]:
+    messages = [
+        {"role": "system", "content": _build_system_prompt(citations)},
+        {"role": "user", "content": message},
+    ]
+    async for token in client.stream_chat(messages):
+        yield token.encode("utf-8")
+
     citations_json = json.dumps([c.model_dump() for c in citations])
     yield f"{_CITATIONS_MARKER}{citations_json}".encode("utf-8")
 
@@ -59,5 +70,6 @@ async def _stream_answer(answer: str, citations: list[Citation]) -> AsyncIterato
 @router.post("/chat")
 async def chat(request: ChatRequest) -> StreamingResponse:
     citations = _pick_citations(request.message)
-    answer = _build_answer(citations)
-    return StreamingResponse(_stream_answer(answer, citations), media_type="text/plain")
+    return StreamingResponse(
+        _stream_answer(request.message, citations, llm_client), media_type="text/plain"
+    )
