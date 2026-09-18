@@ -16,9 +16,7 @@ class FakeLlmClient(LlmClient):
             yield token
 
 
-def test_chat_streams_llm_tokens_then_citations(
-    client: TestClient, monkeypatch
-) -> None:
+def test_chat_streams_llm_tokens_then_citations(client: TestClient, monkeypatch) -> None:
     fake_client = FakeLlmClient(tokens=["Employees ", "get ", "20 ", "days."])
     monkeypatch.setattr("rag_backend.api.routes_chat.llm_client", fake_client)
 

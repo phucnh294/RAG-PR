@@ -12,3 +12,11 @@ class FileTooLargeError(RagBackendError):
 
 class DocumentNotFoundError(RagBackendError):
     """Raised when a requested document id does not exist."""
+
+
+class DocumentParsingError(RagBackendError):
+    """Raised when a document's raw bytes cannot be parsed into text."""
+
+
+class PdfParsingNotImplementedError(DocumentParsingError):
+    """Raised for PDF uploads until real PDF text extraction is implemented."""

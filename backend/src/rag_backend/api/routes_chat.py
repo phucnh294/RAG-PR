@@ -64,7 +64,7 @@ async def _stream_answer(
         yield token.encode("utf-8")
 
     citations_json = json.dumps([c.model_dump() for c in citations])
-    yield f"{_CITATIONS_MARKER}{citations_json}".encode("utf-8")
+    yield f"{_CITATIONS_MARKER}{citations_json}".encode()
 
 
 @router.post("/chat")

@@ -27,5 +27,9 @@ class Settings(BaseSettings):
     llm_model_name: str = "qwen2.5:0.5b-instruct"
     llm_request_timeout_seconds: float = 60.0
 
+    chunk_size_words: int = 200
+    chunk_overlap_words: int = 20
+    embedding_dimension: int = 768
+
 
 settings = Settings()

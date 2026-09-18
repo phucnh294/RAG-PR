@@ -19,20 +19,20 @@ class LlmClient:
         """Yield response content chunks as they arrive from Ollama's streaming chat API."""
         payload = {"model": self._model_name, "messages": messages, "stream": True}
         timeout = httpx.Timeout(settings.llm_request_timeout_seconds)
-        async with httpx.AsyncClient(timeout=timeout) as http_client:
-            async with http_client.stream(
-                "POST", f"{self._base_url}/api/chat", json=payload
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line:
-                        continue
-                    chunk = json.loads(line)
-                    content = chunk.get("message", {}).get("content", "")
-                    if content:
-                        yield content
-                    if chunk.get("done"):
-                        break
+        async with (
+            httpx.AsyncClient(timeout=timeout) as http_client,
+            http_client.stream("POST", f"{self._base_url}/api/chat", json=payload) as response,
+        ):
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                chunk = json.loads(line)
+                content = chunk.get("message", {}).get("content", "")
+                if content:
+                    yield content
+                if chunk.get("done"):
+                    break
 
 
 llm_client = LlmClient()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from rag_backend.config import settings
 
@@ -17,9 +17,21 @@ class DocumentRecord:
     status: str
     created_at: datetime
     excerpts: list[str] = field(default_factory=list)
+    error_message: str | None = None
+
+
+@dataclass
+class ChunkRecord:
+    id: str
+    document_id: str
+    chunk_index: int
+    content: str
+    embedding: list[float]
+    metadata: dict[str, int]
 
 
 _documents: dict[str, DocumentRecord] = {}
+_chunks: dict[str, list[ChunkRecord]] = {}
 
 
 def list_documents() -> list[DocumentRecord]:
@@ -39,6 +51,7 @@ def add_document(
     content_hash: str,
     mime_type: str,
     size_bytes: int,
+    status: str = "pending",
     excerpts: list[str] | None = None,
 ) -> DocumentRecord:
     record = DocumentRecord(
@@ -47,21 +60,47 @@ def add_document(
         content_hash=content_hash,
         mime_type=mime_type,
         size_bytes=size_bytes,
-        status="ready",
-        created_at=datetime.now(timezone.utc),
+        status=status,
+        created_at=datetime.now(UTC),
         excerpts=excerpts or [],
     )
     _documents[record.id] = record
     return record
 
 
+def update_document(
+    document_id: str,
+    status: str,
+    excerpts: list[str] | None = None,
+    error_message: str | None = None,
+) -> DocumentRecord | None:
+    record = _documents.get(document_id)
+    if record is None:
+        return None
+    record.status = status
+    if excerpts is not None:
+        record.excerpts = excerpts
+    if error_message is not None:
+        record.error_message = error_message
+    return record
+
+
 def delete_document(document_id: str) -> bool:
+    _chunks.pop(document_id, None)
     return _documents.pop(document_id, None) is not None
 
 
 def all_excerpts() -> list[tuple[DocumentRecord, str]]:
     """Flat (document, excerpt) pairs across every seeded/uploaded document, used to fake citations."""
     return [(doc, excerpt) for doc in _documents.values() for excerpt in doc.excerpts]
+
+
+def add_chunks(document_id: str, chunks: list[ChunkRecord]) -> None:
+    _chunks[document_id] = chunks
+
+
+def get_chunks(document_id: str) -> list[ChunkRecord]:
+    return _chunks.get(document_id, [])
 
 
 _SEED_DOCS = [
@@ -103,6 +142,7 @@ def seed() -> None:
             content_hash=f"seed-{seed_doc['filename']}",
             mime_type="text/markdown" if seed_doc["filename"].endswith(".md") else "text/plain",
             size_bytes=len(seed_doc["content"].encode("utf-8")),
+            status="ready",
             excerpts=seed_doc["excerpts"],
         )
         doc_dir = settings.input_dir / record.id
