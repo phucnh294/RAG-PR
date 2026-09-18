@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import shutil
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 
 from rag_backend.config import settings
+from rag_backend.rag_pipeline.indexing.pipeline import run_indexing
 from rag_backend.schemas.documents import DocumentOut, UploadResponse
 from rag_backend.storage import dummy_store
 
@@ -25,7 +26,7 @@ def _to_document_out(record: dummy_store.DocumentRecord) -> DocumentOut:
 
 
 @router.post("/documents", response_model=UploadResponse)
-async def upload_document(file: UploadFile) -> UploadResponse:
+async def upload_document(file: UploadFile, background_tasks: BackgroundTasks) -> UploadResponse:
     body = await file.read()
     size_mb = len(body) / (1024 * 1024)
     if size_mb > settings.max_upload_size_mb:
@@ -45,12 +46,13 @@ async def upload_document(file: UploadFile) -> UploadResponse:
         content_hash=content_hash,
         mime_type=mime_type,
         size_bytes=len(body),
-        excerpts=[body.decode("utf-8", errors="ignore")[:200]] if body else [],
     )
 
     doc_dir = settings.input_dir / record.id
     doc_dir.mkdir(parents=True, exist_ok=True)
     (doc_dir / record.filename).write_bytes(body)
+
+    background_tasks.add_task(run_indexing, record.id, record.filename, record.mime_type)
 
     return UploadResponse(document=_to_document_out(record), already_exists=False)
 
