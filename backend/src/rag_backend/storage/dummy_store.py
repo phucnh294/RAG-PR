@@ -103,36 +103,46 @@ def get_chunks(document_id: str) -> list[ChunkRecord]:
     return _chunks.get(document_id, [])
 
 
+def all_chunks() -> list[ChunkRecord]:
+    """Every stored chunk across every document, used by the retrieval similarity search."""
+    return [chunk for chunks in _chunks.values() for chunk in chunks]
+
+
 _SEED_DOCS = [
     {
         "filename": "employee_handbook.md",
-        "content": "All employees are entitled to 20 days of paid annual leave per calendar year.",
-        "excerpts": [
-            "Employees are entitled to 20 days of paid annual leave per calendar year.",
-            "Leave requests must be submitted at least 5 business days in advance.",
-        ],
+        "content": (
+            "All employees are entitled to 20 days of paid annual leave per calendar year. "
+            "Leave requests must be submitted at least 5 business days in advance."
+        ),
     },
     {
         "filename": "product_faq.md",
-        "content": "The free tier includes up to 100 API requests per day.",
-        "excerpts": [
-            "The free tier includes up to 100 API requests per day.",
-            "Upgrading to the Pro plan removes the daily request limit.",
-        ],
+        "content": (
+            "The free tier includes up to 100 API requests per day. "
+            "Upgrading to the Pro plan removes the daily request limit."
+        ),
     },
     {
         "filename": "onboarding_guide.txt",
-        "content": "New hires should complete security training within their first week.",
-        "excerpts": [
-            "New hires should complete security training within their first week.",
-            "Your manager will assign a buddy for your first 30 days.",
-        ],
+        "content": (
+            "New hires should complete security training within their first week. "
+            "Your manager will assign a buddy for your first 30 days."
+        ),
     },
 ]
 
 
 def seed() -> None:
-    """Populate the in-memory store with fake documents and write their raw text to data/input/."""
+    """Populate the store with fake documents, run them through the real indexing
+    pipeline (so retrieval has real chunk/embedding records to search), and write
+    their raw text to data/input/.
+
+    Imports run_indexing locally to avoid a circular import: pipeline.py imports
+    this module at top level, so this module cannot import pipeline.py at top level.
+    """
+    from rag_backend.rag_pipeline.indexing.pipeline import run_indexing
+
     if _documents:
         return
     settings.input_dir.mkdir(parents=True, exist_ok=True)
@@ -142,9 +152,8 @@ def seed() -> None:
             content_hash=f"seed-{seed_doc['filename']}",
             mime_type="text/markdown" if seed_doc["filename"].endswith(".md") else "text/plain",
             size_bytes=len(seed_doc["content"].encode("utf-8")),
-            status="ready",
-            excerpts=seed_doc["excerpts"],
         )
         doc_dir = settings.input_dir / record.id
         doc_dir.mkdir(parents=True, exist_ok=True)
         (doc_dir / record.filename).write_text(seed_doc["content"], encoding="utf-8")
+        run_indexing(record.id, record.filename, record.mime_type)

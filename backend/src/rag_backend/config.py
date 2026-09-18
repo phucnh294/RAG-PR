@@ -31,5 +31,12 @@ class Settings(BaseSettings):
     chunk_overlap_words: int = 20
     embedding_dimension: int = 768
 
+    log_level: str = "INFO"
+
+    retrieval_top_k: int = 5
+    # Tuned for the stub bag-of-words embedding (see embedding_model/client.py) — will
+    # need recalibrating once a real embedding-model container replaces the stub.
+    min_similarity_score: float = 0.3
+
 
 settings = Settings()

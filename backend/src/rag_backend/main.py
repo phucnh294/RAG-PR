@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from rag_backend.api import routes_chat, routes_health, routes_upload
 from rag_backend.config import settings
+from rag_backend.logging_config import configure_logging
 from rag_backend.storage import dummy_store
 
 
@@ -18,6 +19,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    configure_logging()
     app = FastAPI(title="RAG Backend (dummy)", lifespan=lifespan)
 
     app.add_middleware(
