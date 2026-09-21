@@ -6,9 +6,12 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      # Host port 5433, not 5432 — this machine already has a native Postgres
+      # install bound to 5432 (see handoff doc for how this was diagnosed), and
+      # Docker's published port silently loses that race for external clients.
+      - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 10

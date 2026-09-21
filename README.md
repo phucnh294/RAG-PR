@@ -84,7 +84,7 @@ Once all services show `healthy`:
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000 (docs at http://localhost:8000/docs)
-- Postgres: `localhost:5432` (credentials from `.env`)
+- Postgres: `localhost:5433` (credentials from `.env`) — mapped to a non-default host port because `5432` may already be taken by a native Postgres install on your machine; the container's internal port is still the standard `5432`
 
 Stop everything with:
 
