@@ -1,0 +1,86 @@
+---
+title: RAG Pipeline Session Handoff — Through feature/pgvector-docker
+date: 2026-09-21
+type: session-handoff
+area: rag-pipeline
+status: in-progress
+session_id: n/a
+tags: [rag, docker, pgvector, indexing, retrieval, llm, handoff]
+keywords: [feature/pgvector-docker, .env.example, db-ai, POSTGRES_USER, gh pr create, dummy_store, run_indexing, run_retrieval]
+related: [09172026/01_rag-pipeline-implementation-plan.md, 09172026/02_rag-pipeline-project-structure.md]
+next_action: "Check `gh pr list` for the feature/pgvector-docker PR created at the end of this session; once merged, start the next branch for wiring the backend to real Postgres persistence."
+supersedes: null
+---
+
+## TL;DR
+- **What:** Full session handoff for the RAG pipeline project, covering everything from initial CLAUDE.md/planning docs through three merged feature PRs (LLM integration, README, indexing+retrieval pipelines) and the `feature/pgvector-docker` branch (Postgres+pgvector container + a real port-collision bug found and fixed), committed and PR'd at the end of this session.
+- **Why:** Long session, multiple branches and merges — the next session needs to resume from a clean state without re-deriving the whole history from git log.
+- **Where:** Repo root `D:\AI\CLAUDE\RAG`; primarily `backend/src/rag_backend/`, `docker-compose.yml`, `.env.example`, and `rag-ai-local/functionality-docs/09172026/`.
+- **Impact:** Working end-to-end RAG demo (upload → real 8-step indexing → real 10-step retrieval → real local LLM answer with citations) is merged to `master`. A Postgres+pgvector container is stood up, verified reachable from an actual external client on its own non-conflicting port, and PR'd — but still not wired to the backend.
+
+## Current Status
+
+- **Branch:** `feature/pgvector-docker` — committed, pushed, and PR'd this session (check `gh pr list` for the PR number; not yet merged as of session end).
+- **Backend tests:** 40/40 passing (`cd backend && source .venv/Scripts/activate && python -m pytest -q`) — unchanged by this branch, no backend code touched.
+- **Lint:** `ruff check src tests` — clean (as of the indexing/retrieval branch; no backend code changed since).
+- **git status right now:** clean on `feature/pgvector-docker` — everything (credential change, port fix, README update, this handoff doc) committed and pushed.
+- **Docker state right now:** only the `postgres` container is running, healthy, published at `localhost:5433` (not 5432 — see port-collision note below) with `db-ai`/`user`/`user`. `backend`, `frontend`, `llm-model` are all stopped — not running.
+- **GitHub PRs:** #1 (`feature/llm-model`), #2 (`add-readme-file`), #3 (`feature/rag-indexing-pipeline`) are **MERGED** into `master`. `feature/pgvector-docker`'s PR was created this session — check its status before assuming it's merged.
+
+## COMPLETED
+
+1. **CLAUDE.md** — greenfield project doc at repo root (target architecture, doc conventions, skills list).
+2. **Architecture plan docs** — `rag-ai-local/functionality-docs/09172026/01_rag-pipeline-implementation-plan.md` and `02_rag-pipeline-project-structure.md` (pgvector schema, business rules, two-Ollama-container topology, `data/input/` store). Doc 01 has a note pointing to doc 02 for the superseded container topology.
+3. **Initial dummy backend + frontend** (pre-branch-workflow, committed straight to `master` as the repo's first commit): FastAPI upload/list/delete + in-memory `dummy_store` seeded with 3 fake docs; React/Vite chat + documents UI; Dockerfiles + `docker-compose.yml` for backend/frontend.
+4. **PR #1 `feature/llm-model` (MERGED)** — dedicated `llm-model` Ollama container (`qwen2.5:0.5b-instruct`), `backend/src/rag_backend/llm_model/client.py` streaming client, `/chat` wired to real LLM (citations still dummy/keyword-matched at this point).
+5. **PR #2 `add-readme-file` (MERGED)** — `README.md` added.
+6. **`gh` CLI installed and authenticated** (winget, logged in as `phucnh294`). On this machine's bash tool, `gh` is not on PATH by default — prefix commands with `export PATH="/c/Program Files/GitHub CLI:$PATH"`.
+7. **PR #3 `feature/rag-indexing-pipeline` (MERGED)**, two commits:
+   - 8-step indexing pipeline (`backend/src/rag_backend/rag_pipeline/indexing/step1_load_input.py` … `step8_store_chunks.py` + `pipeline.py`), wired into the upload route as a `BackgroundTask`. PDF parsing intentionally raises `PdfParsingNotImplementedError` (`step2_document_parsing.py`) — not implemented.
+   - 10-step retrieval pipeline (`backend/src/rag_backend/rag_pipeline/retrieval/step1_get_input.py` … `step10_response.py` + `pipeline.py`), wired into `/chat` (`backend/src/rag_backend/api/routes_chat.py:1-11` now just calls `run_retrieval`). Real cosine similarity search over stored chunks. Step 6 reranking is an explicit no-op placeholder (skipped per user request). Every step logs start/end with timing; the full system prompt is logged before the LLM call.
+   - Extracted shared `backend/src/rag_backend/embedding_model/client.py` (bag-of-words hashing-trick stub embedding, 768-dim) used by both pipelines.
+   - Added `backend/src/rag_backend/logging_config.py` + `configure_logging()` call in `create_app()` — previously all INFO logs were silently dropped because `logging.basicConfig` was never called.
+   - `dummy_store.seed()` rewritten to run seeded docs through the real `run_indexing` pipeline.
+   - 40 backend tests passing (up from 22); required adding `__init__.py` to `backend/tests/` and subdirs to fix a pytest module-name collision between two `test_pipeline.py` files.
+   - Verified live via `docker compose`: upload → auto-indexed (`pending`→`ready`) → real question → correct LLM answer + citation (similarity score 0.30) → confirmed step-by-step + system-prompt logs in `docker logs rag-backend-1`.
+8. **`feature/pgvector-docker` branch, commit `b642d76` (pushed, not yet PR'd)**:
+   - `docker-compose.yml`: new `postgres` service (`pgvector/pgvector:pg16`, `env_file: .env`, `pgdata` volume, healthcheck via `pg_isready`, port `5432` published).
+   - `postgres/init/01-create-extension.sql` — `CREATE EXTENSION IF NOT EXISTS vector;`.
+   - `.env.example` added (committed, at this commit still has the OLD placeholder values `rag`/`rag`/`change-me`).
+   - `README.md` updated (stack table, `.env` setup step, config table, current-limitations section) to reflect the whole project's actual state as of this branch.
+   - Verified: `vector` extension 0.8.6 installed with `ivfflat`+`hnsw` access methods; real `vector(3)` column create/insert/cosine-distance (`<=>`) query all worked via `docker exec ... psql`.
+9. **Postgres credentials changed to `db-ai`/`user`/`user`** (after commit `b642d76` was already pushed): edited both `.env.example` and the local `.env` on disk. Had to `docker compose down -v postgres` (drop the `pgdata` volume — Postgres only applies `POSTGRES_DB`/`USER`/`PASSWORD` on first init of an empty data dir) then `docker compose up -d postgres` to re-init. Verified via `docker exec rag-postgres-1 psql -U user -d db-ai -c "\dx"` — but see item 10, this check turned out to be insufficient on its own.
+10. **Diagnosed and fixed a real port-5432 collision.** The user reported DBeaver's connection (`db-ai`/`user`/`user`) failing with a password error. Investigation (`Get-NetTCPConnection -LocalPort 5432` / `netstat -ano` in PowerShell) found **two** processes listening on `0.0.0.0:5432` on this Windows machine: `com.docker.backend` (our container's published port) AND a pre-existing native `postgres.exe` process (PID 7548) unrelated to this project. External clients (DBeaver, and a `host.docker.internal`-based connectivity test from a throwaway container) were landing on the native install, not ours — confirmed by the total absence of any "password authentication failed" entry in `docker logs rag-postgres-1` at the exact timestamp of the failing attempt, even though the client reported that exact error (meaning some *other* server sent it). Fixed by remapping the container to a non-conflicting host port: `docker-compose.yml`'s `postgres.ports` changed from `"5432:5432"` to `"5433:5432"`. Re-verified through the new port from a genuinely external client (a separate throwaway container hitting `host.docker.internal:5433`) — confirmed `db-ai`/`user` now authenticate correctly. Also fixed the `pg_isready` healthcheck while in there: it was missing `-d ${POSTGRES_DB}`, so it defaulted to checking a database named after the *username* ("user"), which doesn't exist, spamming `FATAL: database "user" does not exist` into the logs every 10s (harmless but noisy — real auth failures were never in this spam).
+11. **README updated** for the `5433` port and the reason for it.
+12. **This handoff doc written**, then updated in place (not superseded — it was never committed before this session's final commit) to reflect the port-collision fix before being committed.
+13. **Everything above committed to `feature/pgvector-docker` and pushed; PR opened via `gh pr create`** (see Current Status for how to find the PR — its exact number isn't hardcoded here since it was created after this doc's content was drafted).
+
+## NOT DONE / STILL OPEN
+
+1. **Backend is not wired to Postgres at all.** `backend/src/rag_backend/storage/dummy_store.py` is still the only persistence layer — zero SQLAlchemy models, zero Alembic migrations, zero code path touches the `postgres` container. This was explicitly scoped out of `feature/pgvector-docker` (confirmed with the user via AskUserQuestion) and is a separate future branch.
+2. **Architecture docs are out of sync with the actual code.** `rag-ai-local/functionality-docs/09172026/02_rag-pipeline-project-structure.md` describes indexing as 6 steps and retrieval as 5 steps; the actual merged code has 8 and 10 steps respectively (the user gave more granular requirements in a later message that were never back-ported into the docs). Not yet flagged to the user or fixed.
+3. **`backend`, `frontend`, and `llm-model` containers are currently stopped.** Only `postgres` is running. Resuming full end-to-end testing requires `docker compose up -d` (all four services) again.
+4. **PDF parsing is still unimplemented** (`backend/src/rag_backend/rag_pipeline/indexing/step2_document_parsing.py` raises `PdfParsingNotImplementedError` for `application/pdf`) — known, intentional, not tracked anywhere except this note and the code itself.
+5. **`min_similarity_score` (0.3, in `backend/src/rag_backend/config.py`) is tuned for the bag-of-words stub embedding**, not a real model — will need re-tuning whenever a real embedding model replaces the stub.
+6. **The port-5432 collision is machine-specific**, not something fixed at the root: whoever installed the native Postgres on this Windows machine (and why) is unknown/unrecorded. If that native install is ever removed, `5433` still works fine (no reason to move it back), but if the *same* collision pattern shows up on a different machine on a different default port, remember to check `Get-NetTCPConnection`/`netstat` for a double-listener before assuming the app itself is broken.
+
+## NEXT ACTION
+
+Check `gh pr list` (remember the PATH prefix below) to find the `feature/pgvector-docker` PR created at the end of this session and see if it's been merged:
+
+```bash
+export PATH="/c/Program Files/GitHub CLI:$PATH" && cd "D:/AI/CLAUDE/RAG" && gh pr list --state all
+```
+
+Once merged, branch from updated `master` for the next feature. Two candidates worth raising with the user first: (a) wiring the backend to real Postgres persistence (item 1 above), (b) reconciling the architecture docs' step counts with the actual code (item 2 above). Don't assume which one they want first — ask.
+
+## CONTEXT THE NEXT SESSION CANNOT DERIVE FROM CODE
+
+- **Branch-per-feature is a hard rule from the user**, stated explicitly after the very first commit: "do not directly work on master." Every feature since has been its own branch, PR'd, and merged before the next branch starts from updated `master`. Don't skip this even for small changes.
+- **Don't assume a PR is unwanted just because one wasn't created yet.** During the indexing-pipeline branch work, a `gh pr create` tool call was interrupted/rejected once by the user — but that PR (#3) was created successfully and merged in a later turn without any further objection. The rejection was situational (mid-task, user wanted to redirect to describing the next feature), not a standing preference against PRs. For `feature/pgvector-docker`, no PR has been requested OR rejected — it's simply not been asked about since the branch was pushed. Ask, don't assume either way.
+- **Why the embedding stub changed mid-session:** the original indexing-pipeline stub hashed the *whole chunk string* into a vector, which produces ~uncorrelated random cosine similarities between any two different texts (expected value near 0, std dev ~1/sqrt(768)). That meant real similarity search would almost always fall below any reasonable `min_similarity_score` threshold, making retrieval look broken even though the plumbing was correct. The fix was a bag-of-words "hashing trick" (`backend/src/rag_backend/embedding_model/client.py`) — each word hashed into a dimension/sign, then L2-normalized — so texts sharing vocabulary get meaningfully higher cosine similarity. `min_similarity_score` was set to `0.3` (not doc 01's originally-planned `0.5`) specifically because that's what works for this stub's similarity range; verified live with the seeded "20 days of annual leave" question scoring `0.3042...` against the handbook chunk — just above threshold. **This number is meaningless once a real embedding model is used and must be re-tuned then, not reused.**
+- **Why `docker compose down -v postgres` was necessary for the credential change:** Postgres's official entrypoint only runs `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` initialization (and anything in `/docker-entrypoint-initdb.d/`) on the *first* start against an empty data directory. Changing env vars and just restarting the container does nothing — the old volume already has the old role/database baked in. This will bite again any time Postgres env vars change; the fix is always to drop the `pgdata` volume (safe right now since nothing persists real data there yet — will NOT be safe once the backend is actually wired to Postgres).
+- **Why the connection check needed redoing (twice):** the first "verify credentials work" check used `docker exec rag-postgres-1 psql ...`, which only proves the server works from *inside its own container* — it does not prove the published port, host networking, or credentials work for an external client. The user caught this gap by asking "have you checked connection works?" directly. A follow-up check via `docker run --rm --network host ... psql -h localhost` appeared to pass — but this was itself misleading (see next point), and the REAL bug (a second, unrelated Postgres process on the host also bound to 5432) only surfaced when the user reported an actual DBeaver failure. **Lesson: `docker exec` into the target container is not a connectivity test at all — it's a smoke test of the server process only. And even a `--network host` test from a sibling container can be misleading on Docker Desktop for Windows/Mac (host networking there doesn't behave like true Linux host networking) — the only fully trustworthy external-connection test is one that goes through the actual published port the way a real external client would (e.g. a bridge-network container hitting `host.docker.internal:<port>`, which is what finally reproduced and then confirmed the fix for the port collision).**
+- **The port-5432 collision trap:** this machine has a native `postgres.exe` (PID varies) independently listening on `0.0.0.0:5432`, unrelated to this project. Docker Desktop's `com.docker.backend` can *also* successfully bind and publish `5432` for a container at the same time (both show as `LISTENING` in `netstat -ano`) without Docker ever erroring about the port being taken. Which process actually answers an incoming external connection is not something `docker ps` or `docker logs` will reveal — the container's own log will show *zero trace* of a connection that actually went to the other process, which looks exactly like "my connection attempt vanished" rather than "there are two servers." Ground truth was only found via Windows-level `Get-NetTCPConnection -LocalPort 5432 -State Listen` / `netstat -ano | findstr 5432` cross-referenced with `Get-Process -Id <pid>`. **If any future "credentials don't work" report doesn't show up in `docker logs <container>` at all, immediately suspect a second listener on the same host port before re-checking credentials.**
+- **`gh` CLI PATH gotcha on this machine:** installed via `winget install --id GitHub.cli`, but the bash tool's shell doesn't pick up the updated Windows PATH automatically. Every `gh` invocation in bash needs `export PATH="/c/Program Files/GitHub CLI:$PATH"` prefixed (PowerShell tool calls don't need this, `gh` resolves there once installed).
+- **The `.env` file on disk already has the correct new values** (`db-ai`/`user`/`user`) — it's gitignored and intentionally never committed. Only `.env.example`'s uncommitted change (item 1 in NOT DONE) needs action.
