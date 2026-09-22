@@ -8,14 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from rag_backend.api import routes_chat, routes_health, routes_upload
 from rag_backend.config import settings
+from rag_backend.db import postgres_store
+from rag_backend.db.session import close_pool, init_pool
 from rag_backend.logging_config import configure_logging
-from rag_backend.storage import dummy_store
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    dummy_store.seed()
+    await init_pool()
+    await postgres_store.seed()
     yield
+    await close_pool()
 
 
 def create_app() -> FastAPI:

@@ -10,7 +10,7 @@ from rag_backend.rag_pipeline.indexing.step8_store_chunks import store_chunks
 from rag_backend.storage import dummy_store
 
 
-def test_store_chunks_persists_records_retrievable_by_document_id() -> None:
+async def test_store_chunks_persists_records_retrievable_by_document_id() -> None:
     chunk = TextChunk(
         document_id="doc-1", chunk_index=0, content="hello", char_offset_start=0, char_offset_end=5
     )
@@ -21,9 +21,9 @@ def test_store_chunks_persists_records_retrievable_by_document_id() -> None:
         embedding=[0.1, 0.2, 0.3],
     )
 
-    store_chunks("doc-1", [embedded])
+    await store_chunks("doc-1", [embedded])
 
-    stored = dummy_store.get_chunks("doc-1")
+    stored = await dummy_store.get_chunks("doc-1")
     assert len(stored) == 1
     assert stored[0].content == "hello"
     assert stored[0].embedding == [0.1, 0.2, 0.3]

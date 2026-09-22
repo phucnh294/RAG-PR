@@ -6,14 +6,15 @@ import shutil
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile
 
 from rag_backend.config import settings
+from rag_backend.db import postgres_store
 from rag_backend.rag_pipeline.indexing.pipeline import run_indexing
 from rag_backend.schemas.documents import DocumentOut, UploadResponse
-from rag_backend.storage import dummy_store
+from rag_backend.storage.records import DocumentRecord
 
 router = APIRouter(tags=["documents"])
 
 
-def _to_document_out(record: dummy_store.DocumentRecord) -> DocumentOut:
+def _to_document_out(record: DocumentRecord) -> DocumentOut:
     return DocumentOut(
         id=record.id,
         filename=record.filename,
@@ -37,11 +38,11 @@ async def upload_document(file: UploadFile, background_tasks: BackgroundTasks) -
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {mime_type}")
 
     content_hash = hashlib.sha256(body).hexdigest()
-    existing = dummy_store.find_by_hash(content_hash)
+    existing = await postgres_store.find_by_hash(content_hash)
     if existing is not None:
         return UploadResponse(document=_to_document_out(existing), already_exists=True)
 
-    record = dummy_store.add_document(
+    record = await postgres_store.add_document(
         filename=file.filename or "untitled",
         content_hash=content_hash,
         mime_type=mime_type,
@@ -59,14 +60,14 @@ async def upload_document(file: UploadFile, background_tasks: BackgroundTasks) -
 
 @router.get("/documents", response_model=list[DocumentOut])
 async def list_documents() -> list[DocumentOut]:
-    return [_to_document_out(record) for record in dummy_store.list_documents()]
+    return [_to_document_out(record) for record in await postgres_store.list_documents()]
 
 
 @router.delete("/documents/{document_id}", status_code=204)
 async def delete_document(document_id: str) -> None:
-    if dummy_store.get_document(document_id) is None:
+    if await postgres_store.get_document(document_id) is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    dummy_store.delete_document(document_id)
+    await postgres_store.delete_document(document_id)
     doc_dir = settings.input_dir / document_id
     if doc_dir.exists():
         shutil.rmtree(doc_dir)

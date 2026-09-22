@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rag_backend.config import settings
+from rag_backend.db import postgres_store
 from rag_backend.rag_pipeline.retrieval.step4_similarity_search import ScoredChunk
 from rag_backend.schemas.chat import Citation
-from rag_backend.storage import dummy_store
 
 
 @dataclass
@@ -14,7 +14,7 @@ class CombinedContext:
     context_text: str
 
 
-def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
+async def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
     """Drop chunks below the minimum similarity threshold, then merge the survivors
     into citations plus a single numbered context block for prompt building.
     """
@@ -25,7 +25,7 @@ def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
     citations: list[Citation] = []
     context_lines: list[str] = []
     for index, item in enumerate(surviving, start=1):
-        document = dummy_store.get_document(item.chunk.document_id)
+        document = await postgres_store.get_document(item.chunk.document_id)
         filename = document.filename if document is not None else "unknown"
         citations.append(
             Citation(
