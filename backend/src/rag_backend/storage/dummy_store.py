@@ -1,52 +1,40 @@
+"""In-memory fake for the document/chunk store.
+
+This is NOT used in production (see rag_backend.db.postgres_store for the real
+Postgres-backed implementation) — it exists purely as a fast, dependency-free test
+double. The test suite's root conftest.py monkeypatches every function on
+rag_backend.db.postgres_store to point at the matching function here, so pipeline
+code always calls "postgres_store.xxx(...)" while tests transparently exercise
+this in-memory version instead of a real database.
+"""
+
 from __future__ import annotations
 
+import math
 import uuid
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from rag_backend.config import settings
-
-
-@dataclass
-class DocumentRecord:
-    id: str
-    filename: str
-    content_hash: str
-    mime_type: str
-    size_bytes: int
-    status: str
-    created_at: datetime
-    excerpts: list[str] = field(default_factory=list)
-    error_message: str | None = None
-
-
-@dataclass
-class ChunkRecord:
-    id: str
-    document_id: str
-    chunk_index: int
-    content: str
-    embedding: list[float]
-    metadata: dict[str, int]
-
+from rag_backend.storage.records import ChunkRecord, DocumentRecord
+from rag_backend.storage.seed_data import SEED_DOCS
 
 _documents: dict[str, DocumentRecord] = {}
 _chunks: dict[str, list[ChunkRecord]] = {}
 
 
-def list_documents() -> list[DocumentRecord]:
+async def list_documents() -> list[DocumentRecord]:
     return sorted(_documents.values(), key=lambda doc: doc.created_at, reverse=True)
 
 
-def get_document(document_id: str) -> DocumentRecord | None:
+async def get_document(document_id: str) -> DocumentRecord | None:
     return _documents.get(document_id)
 
 
-def find_by_hash(content_hash: str) -> DocumentRecord | None:
+async def find_by_hash(content_hash: str) -> DocumentRecord | None:
     return next((doc for doc in _documents.values() if doc.content_hash == content_hash), None)
 
 
-def add_document(
+async def add_document(
     filename: str,
     content_hash: str,
     mime_type: str,
@@ -68,7 +56,7 @@ def add_document(
     return record
 
 
-def update_document(
+async def update_document(
     document_id: str,
     status: str,
     excerpts: list[str] | None = None,
@@ -85,69 +73,64 @@ def update_document(
     return record
 
 
-def delete_document(document_id: str) -> bool:
+async def delete_document(document_id: str) -> bool:
     _chunks.pop(document_id, None)
     return _documents.pop(document_id, None) is not None
 
 
-def all_excerpts() -> list[tuple[DocumentRecord, str]]:
-    """Flat (document, excerpt) pairs across every seeded/uploaded document, used to fake citations."""
-    return [(doc, excerpt) for doc in _documents.values() for excerpt in doc.excerpts]
-
-
-def add_chunks(document_id: str, chunks: list[ChunkRecord]) -> None:
+async def add_chunks(document_id: str, chunks: list[ChunkRecord]) -> None:
     _chunks[document_id] = chunks
 
 
-def get_chunks(document_id: str) -> list[ChunkRecord]:
+async def get_chunks(document_id: str) -> list[ChunkRecord]:
     return _chunks.get(document_id, [])
 
 
-def all_chunks() -> list[ChunkRecord]:
+async def all_chunks() -> list[ChunkRecord]:
     """Every stored chunk across every document, used by the retrieval similarity search."""
     return [chunk for chunks in _chunks.values() for chunk in chunks]
 
 
-_SEED_DOCS = [
-    {
-        "filename": "employee_handbook.md",
-        "content": (
-            "All employees are entitled to 20 days of paid annual leave per calendar year. "
-            "Leave requests must be submitted at least 5 business days in advance."
-        ),
-    },
-    {
-        "filename": "product_faq.md",
-        "content": (
-            "The free tier includes up to 100 API requests per day. "
-            "Upgrading to the Pro plan removes the daily request limit."
-        ),
-    },
-    {
-        "filename": "onboarding_guide.txt",
-        "content": (
-            "New hires should complete security training within their first week. "
-            "Your manager will assign a buddy for your first 30 days."
-        ),
-    },
-]
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 
-def seed() -> None:
+async def search_similar_chunks(
+    embedding: list[float], top_k: int
+) -> list[tuple[ChunkRecord, float]]:
+    """Rank every stored chunk (across all documents) by cosine similarity, descending.
+
+    Mirrors postgres_store.search_similar_chunks, which does the equivalent ranking
+    in SQL via pgvector's `<=>` cosine-distance operator.
+    """
+    scored = [
+        (chunk, _cosine_similarity(embedding, chunk.embedding)) for chunk in await all_chunks()
+    ]
+    scored.sort(key=lambda item: item[1], reverse=True)
+    return scored[:top_k]
+
+
+async def seed() -> None:
     """Populate the store with fake documents, run them through the real indexing
     pipeline (so retrieval has real chunk/embedding records to search), and write
     their raw text to data/input/.
 
     Imports run_indexing locally to avoid a circular import: pipeline.py imports
-    this module at top level, so this module cannot import pipeline.py at top level.
+    this module (via postgres_store) at top level, so this module cannot import
+    pipeline.py at top level.
     """
     from rag_backend.rag_pipeline.indexing.pipeline import run_indexing
 
     if _documents:
         return
     settings.input_dir.mkdir(parents=True, exist_ok=True)
-    for seed_doc in _SEED_DOCS:
-        record = add_document(
+    for seed_doc in SEED_DOCS:
+        record = await add_document(
             filename=seed_doc["filename"],
             content_hash=f"seed-{seed_doc['filename']}",
             mime_type="text/markdown" if seed_doc["filename"].endswith(".md") else "text/plain",
@@ -156,4 +139,4 @@ def seed() -> None:
         doc_dir = settings.input_dir / record.id
         doc_dir.mkdir(parents=True, exist_ok=True)
         (doc_dir / record.filename).write_text(seed_doc["content"], encoding="utf-8")
-        run_indexing(record.id, record.filename, record.mime_type)
+        await run_indexing(record.id, record.filename, record.mime_type)

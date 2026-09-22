@@ -5,8 +5,8 @@ from rag_backend.rag_pipeline.retrieval.step4_similarity_search import similarit
 from rag_backend.storage import dummy_store
 
 
-def _add_chunk(document_id: str, embedding: list[float]) -> None:
-    dummy_store.add_chunks(
+async def _add_chunk(document_id: str, embedding: list[float]) -> None:
+    await dummy_store.add_chunks(
         document_id,
         [
             dummy_store.ChunkRecord(
@@ -21,13 +21,13 @@ def _add_chunk(document_id: str, embedding: list[float]) -> None:
     )
 
 
-def test_similarity_search_ranks_by_cosine_similarity_descending() -> None:
-    _add_chunk("doc-exact", embedding=[1.0, 0.0, 0.0])
-    _add_chunk("doc-orthogonal", embedding=[0.0, 1.0, 0.0])
-    _add_chunk("doc-opposite", embedding=[-1.0, 0.0, 0.0])
+async def test_similarity_search_ranks_by_cosine_similarity_descending() -> None:
+    await _add_chunk("doc-exact", embedding=[1.0, 0.0, 0.0])
+    await _add_chunk("doc-orthogonal", embedding=[0.0, 1.0, 0.0])
+    await _add_chunk("doc-opposite", embedding=[-1.0, 0.0, 0.0])
 
     query = EmbeddedQuery(text="q", embedding=[1.0, 0.0, 0.0])
-    results = similarity_search(query, top_k=3)
+    results = await similarity_search(query, top_k=3)
 
     assert [item.chunk.document_id for item in results] == [
         "doc-exact",
@@ -38,12 +38,12 @@ def test_similarity_search_ranks_by_cosine_similarity_descending() -> None:
     assert results[2].similarity_score == -1.0
 
 
-def test_similarity_search_respects_top_k() -> None:
-    _add_chunk("doc-1", embedding=[1.0, 0.0])
-    _add_chunk("doc-2", embedding=[0.9, 0.1])
-    _add_chunk("doc-3", embedding=[0.1, 0.9])
+async def test_similarity_search_respects_top_k() -> None:
+    await _add_chunk("doc-1", embedding=[1.0, 0.0])
+    await _add_chunk("doc-2", embedding=[0.9, 0.1])
+    await _add_chunk("doc-3", embedding=[0.1, 0.9])
 
     query = EmbeddedQuery(text="q", embedding=[1.0, 0.0])
-    results = similarity_search(query, top_k=2)
+    results = await similarity_search(query, top_k=2)
 
     assert len(results) == 2

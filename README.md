@@ -2,7 +2,7 @@
 
 A production-oriented Retrieval-Augmented Generation (RAG) system: a React chat/upload UI, a Python (FastAPI) backend, and locally-hosted LLM/embedding models — each service running in its own Docker container.
 
-> **Status:** early-stage. The upload + chat API and UI work end-to-end, with a real local LLM (Ollama) generating answers over an 8-step indexing pipeline and a 10-step retrieval pipeline. Storage is still the in-memory dummy store, and embeddings are a deterministic stub — a Postgres+pgvector container now runs alongside the app but the backend isn't wired to it yet. See [Plan & documentation](#plan--documentation) for the full roadmap.
+> **Status:** early-stage. The upload + chat API and UI work end-to-end, with a real local LLM (Ollama) generating answers over an 8-step indexing pipeline and a 10-step retrieval pipeline. Documents, chunks, and embeddings persist in a real Postgres+pgvector container (`rag_documents`/`rag_chunks`/`rag_embeddings`) — similarity search runs as an actual pgvector `<=>` query, not in-memory. Embeddings are still a deterministic stub, not a real model. See [Plan & documentation](#plan--documentation) for the full roadmap.
 
 ## Stack
 
@@ -12,7 +12,7 @@ A production-oriented Retrieval-Augmented Generation (RAG) system: a React chat/
 | Backend API | Python, FastAPI, uvicorn |
 | LLM | Ollama, running `qwen2.5:0.5b-instruct` in its own container |
 | Embeddings | Deterministic stub (bag-of-words hashing) — a dedicated Ollama `nomic-embed-text` container is planned |
-| Vector store | Postgres + pgvector container running (`pgvector/pgvector:pg16`) — not yet wired to the backend |
+| Vector store | Postgres + pgvector (`pgvector/pgvector:pg16`) — the backend's document/chunk/embedding store |
 | Orchestration | Docker Compose |
 
 ## Project structure
@@ -30,13 +30,16 @@ RAG/
 │   ├── Dockerfile
 │   ├── pyproject.toml
 │   ├── src/rag_backend/
-│   │   ├── main.py             # app factory, CORS, router wiring
+│   │   ├── main.py             # app factory, CORS, router wiring, DB pool lifecycle
 │   │   ├── config.py           # pydantic-settings (env-configurable)
 │   │   ├── exceptions.py       # domain error types
 │   │   ├── api/                # routes: upload, chat, health
 │   │   ├── llm_model/          # client for the llm-model container
+│   │   ├── embedding_model/    # stub embedding client (bag-of-words hashing)
+│   │   ├── db/                 # session.py (asyncpg pool) + postgres_store.py (real store)
 │   │   ├── schemas/            # pydantic request/response models
-│   │   └── storage/            # in-memory dummy document store (seeded)
+│   │   └── storage/            # records.py (shared dataclasses) + dummy_store.py
+│   │                           # (in-memory fake used only by the test suite)
 │   └── tests/                  # pytest suite
 ├── frontend/                   # React + Vite app
 │   ├── Dockerfile
@@ -105,7 +108,7 @@ Environment variables (set in `docker-compose.yml` or an `.env` file) control th
 | `MAX_UPLOAD_SIZE_MB` | `25` | Upload size limit |
 | `ALLOWED_MIME_TYPES` | pdf, txt, md | Accepted upload types |
 
-`.env` (copied from `.env.example`) controls the `postgres` container's credentials — `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`. These aren't consumed by the backend yet (see [Current limitations](#current-limitations)).
+`.env` (copied from `.env.example`) controls the `postgres` container's credentials — `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` — and the backend reads the same file (`env_file: .env` in `docker-compose.yml`) to connect to it, plus `POSTGRES_HOST`/`POSTGRES_PORT` (set to the internal Docker network address `postgres:5432` in compose; override for local non-Docker runs, see below).
 
 ## Running locally without Docker
 
@@ -119,13 +122,13 @@ pip install -e ".[dev]"
 uvicorn rag_backend.main:app --reload
 ```
 
-The backend seeds 3 dummy documents in memory on startup. By default it expects an Ollama instance at `http://llm-model:11434` (the Docker service name) — when running outside Docker, override it:
+The backend seeds 3 documents into Postgres on first startup (skipped if any document already exists). By default it expects an Ollama instance at `http://llm-model:11434` (the Docker service name) and Postgres at `localhost:5433` (the host-mapped port — see [Running with Docker](#running-with-docker-recommended)); when running outside Docker with `docker compose up -d postgres llm-model` still providing those two containers, override the LLM URL:
 
 ```bash
 LLM_BASE_URL=http://localhost:11434 uvicorn rag_backend.main:app --reload
 ```
 
-(This assumes an Ollama instance is running locally on port 11434 with the configured model pulled.)
+(This assumes an Ollama instance is running locally on port 11434 with the configured model pulled, and a reachable Postgres instance — `postgres_host`/`postgres_port` default to `localhost:5433` in `config.py` for this exact case.)
 
 Run tests:
 
@@ -151,8 +154,9 @@ npm run build
 
 ## Current limitations
 
-- Documents and chunks live in an in-memory dummy store (resets on restart); the `postgres`/pgvector container now runs but the backend doesn't persist to it yet.
-- Embeddings are a deterministic bag-of-words hashing stub, not a real model — similarity search reflects word overlap, not semantic meaning.
+- Embeddings are a deterministic bag-of-words hashing stub, not a real model — pgvector similarity search reflects word overlap, not semantic meaning. `min_similarity_score` is tuned for this stub and will need recalibrating once a real embedding model replaces it.
+- The `rag_documents`/`rag_chunks`/`rag_embeddings` schema (`postgres/init/01-create-extension.sql`) was originally shaped for embedding this repo's own `rag-ai-local/*.md` knowledge base; app-uploaded documents reuse the same columns (e.g. `metadata` jsonb holds `content_hash`/`size_bytes`/`excerpts` rather than dedicated columns).
+- No schema migration tool (Alembic, etc.) — the schema is applied once via the Postgres init script; changing it on a running database currently means a manual `psql` command or a volume reset.
 - No authentication or rate limiting.
 - The frontend's API base URL and the backend's CORS allowlist are currently hardcoded per environment (localhost/LAN) rather than templated via `.env`.
 

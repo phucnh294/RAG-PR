@@ -18,8 +18,8 @@ def _scored_chunk(document_id: str, content: str, score: float) -> ScoredChunk:
     return ScoredChunk(chunk=chunk, similarity_score=score)
 
 
-def test_combine_context_drops_chunks_below_threshold_and_formats_survivors() -> None:
-    doc = dummy_store.add_document(
+async def test_combine_context_drops_chunks_below_threshold_and_formats_survivors() -> None:
+    doc = await dummy_store.add_document(
         filename="handbook.md", content_hash="h1", mime_type="text/markdown", size_bytes=10
     )
     below_threshold_score = settings.min_similarity_score - 0.01
@@ -30,7 +30,7 @@ def test_combine_context_drops_chunks_below_threshold_and_formats_survivors() ->
         _scored_chunk(doc.id, "dropped content", below_threshold_score),
     ]
 
-    result = combine_context(chunks)
+    result = await combine_context(chunks)
 
     assert len(result.citations) == 1
     assert result.citations[0].excerpt == "kept content"
@@ -38,10 +38,10 @@ def test_combine_context_drops_chunks_below_threshold_and_formats_survivors() ->
     assert "[1] (handbook.md) kept content" in result.context_text
 
 
-def test_combine_context_returns_empty_when_nothing_survives() -> None:
+async def test_combine_context_returns_empty_when_nothing_survives() -> None:
     chunks = [_scored_chunk("doc-1", "text", settings.min_similarity_score - 0.5)]
 
-    result = combine_context(chunks)
+    result = await combine_context(chunks)
 
     assert result.citations == []
     assert result.context_text == ""

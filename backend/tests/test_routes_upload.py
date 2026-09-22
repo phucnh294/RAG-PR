@@ -17,7 +17,7 @@ def test_upload_then_list_returns_document(client: TestClient) -> None:
     assert any(doc["filename"] == "note.txt" for doc in listed)
 
 
-def test_upload_triggers_indexing_pipeline_to_completion(client: TestClient) -> None:
+async def test_upload_triggers_indexing_pipeline_to_completion(client: TestClient) -> None:
     response = client.post(
         "/documents",
         files={"file": ("note.txt", b"hello world, this is indexed content", "text/plain")},
@@ -26,10 +26,10 @@ def test_upload_triggers_indexing_pipeline_to_completion(client: TestClient) -> 
 
     # TestClient runs FastAPI BackgroundTasks synchronously before returning,
     # so indexing has already completed by the time the response comes back.
-    updated = dummy_store.get_document(document_id)
+    updated = await dummy_store.get_document(document_id)
     assert updated is not None
     assert updated.status == "ready"
-    assert len(dummy_store.get_chunks(document_id)) > 0
+    assert len(await dummy_store.get_chunks(document_id)) > 0
 
 
 def test_upload_duplicate_bytes_returns_existing_document(client: TestClient) -> None:

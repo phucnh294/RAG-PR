@@ -27,11 +27,11 @@ async def test_run_retrieval_streams_answer_and_citations_for_a_matching_documen
     monkeypatch.setattr(
         "rag_backend.llm_model.client.llm_client", FakeLlmClient(tokens=["yes ", "20 ", "days"])
     )
-    doc = dummy_store.add_document(
+    doc = await dummy_store.add_document(
         filename="handbook.md", content_hash="h1", mime_type="text/markdown", size_bytes=10
     )
     chunk_content = "Employees get 20 days of annual leave per year."
-    dummy_store.add_chunks(
+    await dummy_store.add_chunks(
         doc.id,
         [
             dummy_store.ChunkRecord(

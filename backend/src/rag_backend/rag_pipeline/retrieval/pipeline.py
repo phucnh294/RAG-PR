@@ -50,7 +50,7 @@ async def run_retrieval(
     _log_step_end("3_embedding_question", started)
 
     started = _log_step_start("4_similarity_search")
-    scored_chunks = similarity_search(embedded_query)
+    scored_chunks = await similarity_search(embedded_query)
     _log_step_end("4_similarity_search", started)
 
     started = _log_step_start("5_metadata_filter")
@@ -62,7 +62,7 @@ async def run_retrieval(
     _log_step_end("6_reranking", started)
 
     started = _log_step_start("7_combine_context")
-    context = combine_context(reranked_chunks)
+    context = await combine_context(reranked_chunks)
     _log_step_end("7_combine_context", started)
 
     started = _log_step_start("8_build_prompt")
