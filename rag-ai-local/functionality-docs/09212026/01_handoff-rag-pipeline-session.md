@@ -3,7 +3,7 @@ title: RAG Pipeline Session Handoff — Through feature/pgvector-docker
 date: 2026-09-21
 type: session-handoff
 area: rag-pipeline
-status: in-progress
+status: superseded
 session_id: n/a
 tags: [rag, docker, pgvector, indexing, retrieval, llm, handoff]
 keywords: [feature/pgvector-docker, .env.example, db-ai, POSTGRES_USER, gh pr create, dummy_store, run_indexing, run_retrieval]
