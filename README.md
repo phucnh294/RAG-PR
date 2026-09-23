@@ -29,11 +29,13 @@ RAG/
 ├── backend/                    # FastAPI application
 │   ├── Dockerfile
 │   ├── pyproject.toml
+│   ├── pipeline-logs/           # one JSON file per indexing/retrieval run (bind-mounted, gitignored)
 │   ├── src/rag_backend/
 │   │   ├── main.py             # app factory, CORS, router wiring, DB pool lifecycle
 │   │   ├── config.py           # pydantic-settings (env-configurable)
 │   │   ├── exceptions.py       # domain error types
-│   │   ├── api/                # routes: upload, chat, health
+│   │   ├── pipeline_logging.py # writes the per-run JSON log files under pipeline-logs/
+│   │   ├── api/                # routes: upload, chat, health, logs
 │   │   ├── llm_model/          # client for the llm-model container
 │   │   ├── embedding_model/    # stub embedding client (bag-of-words hashing)
 │   │   ├── db/                 # session.py (asyncpg pool) + postgres_store.py (real store)
@@ -47,7 +49,7 @@ RAG/
 │   └── src/
 │       ├── api/                # backend client + streaming chat reader
 │       ├── components/         # ChatWindow, DocumentUpload, DocumentList, ...
-│       └── pages/               # ChatPage, DocumentsPage
+│       └── pages/               # ChatPage, DocumentsPage, LogsPage
 ├── .claude/                    # coding standards & doc-organization rules/skills
 └── rag-ai-local/                # architecture plans, design docs, Q&A knowledge base
 ```
@@ -96,6 +98,15 @@ docker compose down
 ```
 
 Uploaded documents persist on the host under `data/input/` (bind-mounted, gitignored) even after containers are removed.
+
+### Pipeline logs
+
+Every indexing run and every chat request writes one JSON file to `backend/pipeline-logs/{indexing,retrieval}/` (bind-mounted, gitignored) capturing the full run: for retrieval, the user's message, the normalized query, the similarity-search results, the full system prompt and messages sent to the LLM, the final answer, the citations, and per-step timings; for indexing, the filename/mime type, resulting chunk count or failure reason, and per-step timings. Browse them in the UI's **Logs** tab, or hit the API directly:
+
+```bash
+curl http://localhost:8000/logs                       # list recent runs (add ?pipeline=retrieval|indexing to filter)
+curl http://localhost:8000/logs/retrieval/<log-id>     # full record for one run
+```
 
 ### Configuration
 

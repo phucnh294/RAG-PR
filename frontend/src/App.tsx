@@ -1,29 +1,40 @@
 import { useState } from "react";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
+import LogsPage from "./pages/LogsPage";
 
-type Tab = "chat" | "documents";
+type Tab = "chat" | "documents" | "logs";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "chat", label: "Chat" },
+  { id: "documents", label: "Documents" },
+  { id: "logs", label: "Logs" },
+];
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("chat");
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>RAG Assistant</h1>
-        <nav className="tabs">
-          <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>
-            Chat
-          </button>
-          <button
-            className={tab === "documents" ? "active" : ""}
-            onClick={() => setTab("documents")}
-          >
-            Documents
-          </button>
+      <aside className="sidebar">
+        <h1 className="sidebar-title">RAG Assistant</h1>
+        <nav className="sidebar-nav">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              className={tab === item.id ? "active" : ""}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
         </nav>
-      </header>
-      <main>{tab === "chat" ? <ChatPage /> : <DocumentsPage />}</main>
+      </aside>
+      <main className="content">
+        {tab === "chat" && <ChatPage />}
+        {tab === "documents" && <DocumentsPage />}
+        {tab === "logs" && <LogsPage />}
+      </main>
     </div>
   );
 }

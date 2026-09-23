@@ -16,6 +16,8 @@ class Settings(BaseSettings):
         "http://192.168.1.69:3000",
     ]
     input_dir: Path = Path("data/input")
+    # One JSON file per indexing/retrieval run, under pipeline_log_dir/{indexing,retrieval}/.
+    pipeline_log_dir: Path = Path("pipeline-logs")
     max_upload_size_mb: int = 25
     allowed_mime_types: tuple[str, ...] = (
         "application/pdf",

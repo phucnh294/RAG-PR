@@ -18,3 +18,7 @@ dist/
 # Runtime data (uploaded documents, model caches)
 data/input/*
 !data/input/.gitkeep
+
+# Per-request pipeline log files (see rag_backend.pipeline_logging)
+backend/pipeline-logs/*
+!backend/pipeline-logs/.gitkeep
