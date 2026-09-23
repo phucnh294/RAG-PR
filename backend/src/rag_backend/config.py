@@ -4,11 +4,21 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Repo-root .env (backend/src/rag_backend/config.py -> backend -> repo root), resolved
+# from this file's location rather than the process CWD. Docker Compose injects env vars
+# directly and doesn't need this file, but running the backend locally (e.g. `uvicorn`
+# from backend/) would otherwise miss the root .env depending on where it's launched from.
+_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+
 
 class Settings(BaseSettings):
-    """Runtime configuration, overridable via environment variables or a .env file."""
+    """Runtime configuration. Every field below can be overridden via an environment
+    variable of the same name (case-insensitive) or by setting it in the repo-root
+    `.env` file — see `.env.example` for the full list. No code changes are needed to
+    point at a different LLM, embedding model, port, or database.
+    """
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
     cors_origins: list[str] = [
         "http://localhost:5173",
@@ -25,9 +35,15 @@ class Settings(BaseSettings):
         "text/markdown",
     )
 
+    # "ollama" uses the local llm-model container's /api/chat endpoint below;
+    # "google" calls the Gemini API instead and requires google_api_key.
+    llm_provider: str = "ollama"
     llm_base_url: str = "http://llm-model:11434"
     llm_model_name: str = "qwen2.5:0.5b-instruct"
     llm_request_timeout_seconds: float = 60.0
+
+    google_api_key: str | None = None
+    google_model_name: str = "gemini-2.0-flash"
 
     embedding_base_url: str = "http://embedding-model:11434"
     embedding_request_timeout_seconds: float = 30.0
