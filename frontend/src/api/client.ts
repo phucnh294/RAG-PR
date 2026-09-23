@@ -44,4 +44,39 @@ export async function deleteDocument(documentId: string): Promise<void> {
   }
 }
 
+export type PipelineName = "retrieval" | "indexing";
+
+export interface LogSummary {
+  id: string;
+  pipeline: PipelineName;
+  created_at: string;
+  summary: string;
+}
+
+export interface LogDetail {
+  id: string;
+  pipeline: PipelineName;
+  record: Record<string, unknown>;
+}
+
+export async function fetchLogs(pipeline?: PipelineName): Promise<LogSummary[]> {
+  const url = new URL(`${API_BASE}/logs`);
+  if (pipeline) {
+    url.searchParams.set("pipeline", pipeline);
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch logs: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchLogDetail(pipeline: PipelineName, id: string): Promise<LogDetail> {
+  const response = await fetch(`${API_BASE}/logs/${pipeline}/${id}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch log: ${response.status}`);
+  }
+  return response.json();
+}
+
 export { API_BASE };

@@ -45,6 +45,7 @@ services:
       POSTGRES_PORT: "5432"
     volumes:
       - ./data/input:/app/data/input
+      - ./backend/pipeline-logs:/app/pipeline-logs
     depends_on:
       llm-model:
         condition: service_healthy

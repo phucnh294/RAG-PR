@@ -46,6 +46,12 @@ def _fake_postgres_store(monkeypatch: pytest.MonkeyPatch) -> None:
     dummy_store._chunks.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_pipeline_log_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep per-request pipeline log files out of the real backend/pipeline-logs/."""
+    monkeypatch.setattr(settings, "pipeline_log_dir", tmp_path / "pipeline-logs")
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
     monkeypatch.setattr(settings, "input_dir", tmp_path)

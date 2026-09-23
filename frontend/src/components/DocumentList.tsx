@@ -25,33 +25,35 @@ export default function DocumentList({ documents, onDeleted }: DocumentListProps
   }
 
   return (
-    <table className="document-list">
-      <thead>
-        <tr>
-          <th>Filename</th>
-          <th>Type</th>
-          <th>Size</th>
-          <th>Status</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {documents.map((doc) => (
-          <tr key={doc.id}>
-            <td>{doc.filename}</td>
-            <td>{doc.mime_type}</td>
-            <td>{(doc.size_bytes / 1024).toFixed(1)} KB</td>
-            <td>
-              <span className={`status-badge ${doc.status}`}>
-                {STATUS_LABELS[doc.status] ?? doc.status}
-              </span>
-            </td>
-            <td>
-              <button onClick={() => void handleDelete(doc.id)}>Delete</button>
-            </td>
+    <div className="table-scroll">
+      <table className="document-list">
+        <thead>
+          <tr>
+            <th>Filename</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Status</th>
+            <th></th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {documents.map((doc) => (
+            <tr key={doc.id}>
+              <td>{doc.filename}</td>
+              <td>{doc.mime_type}</td>
+              <td>{(doc.size_bytes / 1024).toFixed(1)} KB</td>
+              <td>
+                <span className={`status-badge ${doc.status}`}>
+                  {STATUS_LABELS[doc.status] ?? doc.status}
+                </span>
+              </td>
+              <td>
+                <button onClick={() => void handleDelete(doc.id)}>Delete</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

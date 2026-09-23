@@ -8,7 +8,7 @@ COPY src ./src
 RUN pip install --no-cache-dir .
 
 RUN useradd --create-home appuser \
-    && mkdir -p /app/data/input \
+    && mkdir -p /app/data/input /app/pipeline-logs \
     && chown -R appuser:appuser /app
 USER appuser
 
