@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -86,3 +88,35 @@ async def test_run_indexing_writes_a_json_log_file_for_success_and_failure() -> 
     assert failed_log["error"] is not None
     assert "1_load_input" in failed_log["steps"]
     assert "3_chunking_strategy" not in failed_log["steps"]
+    # step2 raised before store_document ran, so it logged its input but never got
+    # to log an output — that gap is exactly what marks it as the failure point.
+    assert "input" in failed_log["steps"]["2_document_parsing"]
+    assert "output" not in failed_log["steps"]["2_document_parsing"]
+
+
+async def test_run_indexing_logs_every_step_input_and_output_to_console(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    record = await dummy_store.add_document(
+        filename="note.txt", content_hash="h5", mime_type="text/plain", size_bytes=11
+    )
+    doc_dir = settings.input_dir / record.id
+    doc_dir.mkdir(parents=True)
+    (doc_dir / record.filename).write_text("hello world, this is a test", encoding="utf-8")
+
+    with caplog.at_level(logging.INFO, logger="rag_backend.rag_pipeline.indexing.pipeline"):
+        await run_indexing(record.id, record.filename, record.mime_type)
+
+    messages = [log_record.message for log_record in caplog.records]
+    template = re.compile(r"^Indexing - \S+ \S+T\S+ - (input|output): ")
+    assert any(template.match(m) for m in messages), messages
+
+    def _has(step: str, direction: str) -> bool:
+        return any(
+            m.startswith(f"Indexing - {step} ") and f"- {direction}: " in m for m in messages
+        )
+
+    assert _has("1_load_input", "input")
+    assert _has("1_load_input", "output")
+    assert _has("8_store_chunks", "input")
+    assert _has("8_store_chunks", "output")
