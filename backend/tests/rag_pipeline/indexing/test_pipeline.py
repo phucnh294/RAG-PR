@@ -77,8 +77,12 @@ async def test_run_indexing_writes_a_json_log_file_for_success_and_failure() -> 
     ready_log = json.loads(log_files[ready_record.id].read_text(encoding="utf-8"))
     assert ready_log["status"] == "ready"
     assert ready_log["chunk_count"] > 0
-    assert "6_embedding" in ready_log["step_timings_ms"]
+    assert ready_log["steps"]["6_embedding"]["duration_ms"] >= 0
+    assert ready_log["steps"]["6_embedding"]["output"]["chunk_count"] == ready_log["chunk_count"]
+    assert ready_log["steps"]["3_chunking_strategy"]["output"]["chunk_count"] > 0
 
     failed_log = json.loads(log_files[failed_record.id].read_text(encoding="utf-8"))
     assert failed_log["status"] == "failed"
     assert failed_log["error"] is not None
+    assert "1_load_input" in failed_log["steps"]
+    assert "3_chunking_strategy" not in failed_log["steps"]

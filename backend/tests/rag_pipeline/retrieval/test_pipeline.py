@@ -105,4 +105,6 @@ async def test_run_retrieval_writes_a_json_log_file_with_the_full_exchange(
     assert record["llm_response"] == "yes 20 days"
     assert "You are a helpful assistant" in record["system_prompt"]
     assert record["citations"][0]["filename"] == "handbook.md"
-    assert record["step_timings_ms"]["9_call_llm_model"] >= 0
+    assert record["steps"]["9_call_llm_model"]["duration_ms"] >= 0
+    assert record["steps"]["9_call_llm_model"]["output"]["answer"] == "yes 20 days"
+    assert record["steps"]["4_similarity_search"]["output"]["result_count"] == 1
