@@ -22,22 +22,22 @@ def _chunk_with_metadata(content: str) -> ChunkWithMetadata:
     )
 
 
-def test_embed_chunks_produces_vectors_of_configured_dimension() -> None:
-    embedded = embed_chunks([_chunk_with_metadata("hello")])
+async def test_embed_chunks_produces_vectors_of_configured_dimension() -> None:
+    embedded = await embed_chunks([_chunk_with_metadata("hello")])
 
     assert len(embedded[0].embedding) == settings.embedding_dimension
     assert all(-1.0 <= value <= 1.0 for value in embedded[0].embedding)
 
 
-def test_embed_chunks_is_deterministic_for_same_text() -> None:
-    first = embed_chunks([_chunk_with_metadata("hello")])
-    second = embed_chunks([_chunk_with_metadata("hello")])
+async def test_embed_chunks_is_deterministic_for_same_text() -> None:
+    first = await embed_chunks([_chunk_with_metadata("hello")])
+    second = await embed_chunks([_chunk_with_metadata("hello")])
 
     assert first[0].embedding == second[0].embedding
 
 
-def test_embed_chunks_differs_for_different_text() -> None:
-    first = embed_chunks([_chunk_with_metadata("hello")])
-    second = embed_chunks([_chunk_with_metadata("goodbye")])
+async def test_embed_chunks_differs_for_different_text() -> None:
+    first = await embed_chunks([_chunk_with_metadata("hello")])
+    second = await embed_chunks([_chunk_with_metadata("goodbye")])
 
     assert first[0].embedding != second[0].embedding

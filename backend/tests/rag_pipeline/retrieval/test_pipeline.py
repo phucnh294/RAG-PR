@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from rag_backend.config import settings
-from rag_backend.embedding_model.client import embedding_client
+from rag_backend.embedding_model import client as embedding_model_client
 from rag_backend.llm_model.client import LlmClient
 from rag_backend.rag_pipeline.retrieval.pipeline import run_retrieval
 from rag_backend.rag_pipeline.retrieval.step10_response import CITATIONS_MARKER
@@ -42,7 +42,7 @@ async def test_run_retrieval_streams_answer_and_citations_for_a_matching_documen
                 document_id=doc.id,
                 chunk_index=0,
                 content=chunk_content,
-                embedding=embedding_client.embed_text(chunk_content),
+                embedding=await embedding_model_client.embedding_client.embed_text(chunk_content),
                 metadata={"word_count": 8, "char_count": 40},
             )
         ],
@@ -104,7 +104,7 @@ async def test_run_retrieval_writes_a_json_log_file_with_the_full_exchange(
                 document_id=doc.id,
                 chunk_index=0,
                 content=chunk_content,
-                embedding=embedding_client.embed_text(chunk_content),
+                embedding=await embedding_model_client.embedding_client.embed_text(chunk_content),
                 metadata={"word_count": 8, "char_count": 40},
             )
         ],

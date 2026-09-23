@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from rag_backend.config import settings
 from rag_backend.db import postgres_store
 from rag_backend.db import session as db_session
+from rag_backend.embedding_model import client as embedding_model_client
+from rag_backend.embedding_model import fake_client as fake_embedding_client
 from rag_backend.main import create_app
 from rag_backend.storage import dummy_store
 
@@ -44,6 +46,18 @@ def _fake_postgres_store(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(db_session, "close_pool", _noop_pool_lifecycle)
     dummy_store._documents.clear()
     dummy_store._chunks.clear()
+
+
+@pytest.fixture(autouse=True)
+def _fake_embedding_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route rag_backend.embedding_model.client.embedding_client to the deterministic,
+    no-network fake — otherwise every test that touches indexing or retrieval (most
+    of the suite, since seed() runs on every app startup) would try to reach a
+    nonexistent embedding-model container.
+    """
+    monkeypatch.setattr(
+        embedding_model_client, "embedding_client", fake_embedding_client.EmbeddingClient()
+    )
 
 
 @pytest.fixture(autouse=True)

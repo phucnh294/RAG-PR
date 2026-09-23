@@ -58,7 +58,7 @@ async def run_retrieval(
         steps.log_output("2_normalize_input", {"normalized_text": normalized.text})
 
         steps.log_input("3_embedding_question", {"normalized_text": normalized.text})
-        embedded_query = embed_question(normalized)
+        embedded_query = await embed_question(normalized)
         steps.log_output(
             "3_embedding_question", {"embedding_dimension": len(embedded_query.embedding)}
         )

@@ -79,7 +79,7 @@ async def run_indexing(document_id: str, filename: str, mime_type: str) -> None:
         steps.log_output("5_extract_metadata", {"chunk_count": len(chunks_with_metadata)})
 
         steps.log_input("6_embedding", {"chunk_count": len(chunks_with_metadata)})
-        embedded_chunks = embed_chunks(chunks_with_metadata)
+        embedded_chunks = await embed_chunks(chunks_with_metadata)
         steps.log_output(
             "6_embedding",
             {

@@ -1,43 +1,36 @@
 from __future__ import annotations
 
-import hashlib
-import math
+import httpx
 
 from rag_backend.config import settings
 
 
 class EmbeddingClient:
-    """Placeholder embedding client used by both indexing and retrieval.
+    """Thin client for the dedicated embedding-model container's /api/embed endpoint.
 
-    Produces a deterministic bag-of-words "hashing trick" embedding: each word is
-    hashed into a dimension and sign, then the vector is L2-normalized. This gives
-    meaningfully higher cosine similarity to texts that share vocabulary (unlike
-    hashing the whole string, which would produce uncorrelated random vectors), so
-    similarity search behaves sensibly for demos — but it is not a real semantic
-    embedding. Replace with a call to a dedicated embedding-model container
-    (e.g. nomic-embed-text via Ollama) once one exists; keep the same output
-    dimension (settings.embedding_dimension) so stored vectors stay comparable.
+    Mirrors llm_model/client.py's shape. Deliberately has no knowledge of
+    nomic-embed-text's task-prefix convention ("search_document: "/"search_query: ")
+    — that's specific to how each pipeline step uses the embedding, not to the
+    client itself, so it's applied by the callers (step6_embedding.py,
+    step3_embedding_question.py).
     """
 
-    def __init__(self, dimension: int | None = None) -> None:
-        self._dimension = dimension or settings.embedding_dimension
+    def __init__(self, base_url: str | None = None, model_name: str | None = None) -> None:
+        self._base_url = base_url or settings.embedding_base_url
+        self._model_name = model_name or settings.embedding_model_name
 
-    def embed_text(self, text: str) -> list[float]:
-        vector = [0.0] * self._dimension
-        words = text.lower().split()
-        for word in words:
-            digest = hashlib.sha256(word.encode("utf-8")).digest()
-            index = int.from_bytes(digest[:4], "big") % self._dimension
-            sign = 1.0 if digest[4] % 2 == 0 else -1.0
-            vector[index] += sign
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        payload = {"model": self._model_name, "input": texts}
+        timeout = httpx.Timeout(settings.embedding_request_timeout_seconds)
+        async with httpx.AsyncClient(timeout=timeout) as http_client:
+            response = await http_client.post(f"{self._base_url}/api/embed", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data["embeddings"]
 
-        norm = math.sqrt(sum(value * value for value in vector))
-        if norm == 0:
-            return vector
-        return [value / norm for value in vector]
-
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        return [self.embed_text(text) for text in texts]
+    async def embed_text(self, text: str) -> list[float]:
+        embeddings = await self.embed_texts([text])
+        return embeddings[0]
 
 
 embedding_client = EmbeddingClient()

@@ -29,19 +29,27 @@ class Settings(BaseSettings):
     llm_model_name: str = "qwen2.5:0.5b-instruct"
     llm_request_timeout_seconds: float = 60.0
 
+    embedding_base_url: str = "http://embedding-model:11434"
+    embedding_request_timeout_seconds: float = 30.0
+
     chunk_size_words: int = 200
     chunk_overlap_words: int = 20
     embedding_dimension: int = 768
-    # Label stored in rag_embeddings.model — identifies which embedding model produced
-    # a given vector, so vectors from different models are never silently compared.
-    embedding_model_name: str = "bow-hash-stub"
+    # Ollama model tag AND the label stored in rag_embeddings.model — identifies which
+    # embedding model produced a given vector, so vectors from different models are
+    # never silently compared.
+    embedding_model_name: str = "nomic-embed-text"
 
     log_level: str = "INFO"
 
     retrieval_top_k: int = 5
-    # Tuned for the stub bag-of-words embedding (see embedding_model/client.py) — will
-    # need recalibrating once a real embedding-model container replaces the stub.
-    min_similarity_score: float = 0.3
+    # nomic-embed-text's cosine similarity has a much higher "noise floor" than the
+    # old hash stub: live testing showed a genuine match scoring ~0.91, but entirely
+    # unrelated seeded documents scoring 0.60-0.62 for the same query (short English
+    # sentences share substantial embedding-space direction regardless of topic).
+    # doc 01's originally-documented 0.5 let those false positives through, so this
+    # is set above the observed noise ceiling instead.
+    min_similarity_score: float = 0.7
 
     # Postgres connection. Defaults match .env.example / a local `docker compose up`;
     # postgres_host/port are overridden in docker-compose.yml's backend service to

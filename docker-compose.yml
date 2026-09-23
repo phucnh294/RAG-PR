@@ -31,6 +31,20 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  embedding-model:
+    build: ./embedding-model
+    environment:
+      EMBEDDING_MODEL_NAME: nomic-embed-text
+    volumes:
+      - embedding_models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q \"$${EMBEDDING_MODEL_NAME}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
   backend:
     build: ./backend
     ports:
@@ -39,6 +53,8 @@ services:
     environment:
       LLM_BASE_URL: http://llm-model:11434
       LLM_MODEL_NAME: qwen2.5:0.5b-instruct
+      EMBEDDING_BASE_URL: http://embedding-model:11434
+      EMBEDDING_MODEL_NAME: nomic-embed-text
       # Internal Docker network: the postgres container's own port (always 5432),
       # not the 5433 host-mapped port used by external tools like DBeaver.
       POSTGRES_HOST: postgres
@@ -48,6 +64,8 @@ services:
       - ./backend/pipeline-logs:/app/pipeline-logs
     depends_on:
       llm-model:
+        condition: service_healthy
+      embedding-model:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -72,4 +90,5 @@ services:
 
 volumes:
   llm_models:
+  embedding_models:
   pgdata:
