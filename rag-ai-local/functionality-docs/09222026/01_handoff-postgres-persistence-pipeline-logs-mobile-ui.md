@@ -3,7 +3,7 @@ title: RAG Pipeline Session Handoff — Postgres Persistence, Pipeline Logs, Mob
 date: 2026-09-22
 type: session-handoff
 area: rag-pipeline
-status: in-progress
+status: superseded
 session_id: n/a
 tags: [rag, postgres, pgvector, logging, frontend, mobile, handoff]
 keywords: [postgres_store, pipeline_logging, GET /logs, LogsPage, sidebar-toggle, RawQuery.text, log-pipeline]
