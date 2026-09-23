@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 
 import pytest
 
 from rag_backend.config import settings
-from rag_backend.embedding_model.client import embedding_client
+from rag_backend.embedding_model import client as embedding_model_client
 from rag_backend.llm_model.client import LlmClient
 from rag_backend.rag_pipeline.retrieval.pipeline import run_retrieval
 from rag_backend.rag_pipeline.retrieval.step10_response import CITATIONS_MARKER
@@ -41,7 +42,7 @@ async def test_run_retrieval_streams_answer_and_citations_for_a_matching_documen
                 document_id=doc.id,
                 chunk_index=0,
                 content=chunk_content,
-                embedding=embedding_client.embed_text(chunk_content),
+                embedding=await embedding_model_client.embedding_client.embed_text(chunk_content),
                 metadata={"word_count": 8, "char_count": 40},
             )
         ],
@@ -64,11 +65,25 @@ async def test_run_retrieval_logs_each_step_and_the_system_prompt(
         _ = [chunk async for chunk in run_retrieval("anything")]
 
     messages = [record.message for record in caplog.records]
-    assert any("Retrieval step start: 1_get_input" in m for m in messages)
-    assert any("Retrieval step done: 1_get_input" in m for m in messages)
-    assert any("Retrieval step start: 9_call_llm_model" in m for m in messages)
-    assert any("Retrieval step done: 9_call_llm_model" in m for m in messages)
-    assert any("System prompt for this request" in m for m in messages)
+
+    # Every step must emit BOTH an "input" and an "output" line, following the
+    # "{Process} - {step} {timestamp} - input|output: {data}" template.
+    template = re.compile(r"^Retrieval - \S+ \S+T\S+ - (input|output): ")
+    assert any(template.match(m) for m in messages), messages
+
+    def _has(step: str, direction: str) -> bool:
+        return any(
+            m.startswith(f"Retrieval - {step} ") and f"- {direction}: " in m for m in messages
+        )
+
+    assert _has("1_get_input", "input")
+    assert _has("1_get_input", "output")
+    assert _has("9_call_llm_model", "input")
+    assert _has("9_call_llm_model", "output")
+    assert any(
+        m.startswith("Retrieval - 8_build_prompt ") and "You are a helpful assistant" in m
+        for m in messages
+    )
 
 
 async def test_run_retrieval_writes_a_json_log_file_with_the_full_exchange(
@@ -89,7 +104,7 @@ async def test_run_retrieval_writes_a_json_log_file_with_the_full_exchange(
                 document_id=doc.id,
                 chunk_index=0,
                 content=chunk_content,
-                embedding=embedding_client.embed_text(chunk_content),
+                embedding=await embedding_model_client.embedding_client.embed_text(chunk_content),
                 metadata={"word_count": 8, "char_count": 40},
             )
         ],
@@ -107,4 +122,8 @@ async def test_run_retrieval_writes_a_json_log_file_with_the_full_exchange(
     assert record["citations"][0]["filename"] == "handbook.md"
     assert record["steps"]["9_call_llm_model"]["duration_ms"] >= 0
     assert record["steps"]["9_call_llm_model"]["output"]["answer"] == "yes 20 days"
+    assert (
+        record["steps"]["9_call_llm_model"]["input"]["messages"] == record["messages_sent_to_llm"]
+    )
     assert record["steps"]["4_similarity_search"]["output"]["result_count"] == 1
+    assert record["steps"]["1_get_input"]["input_at"] <= record["steps"]["1_get_input"]["output_at"]

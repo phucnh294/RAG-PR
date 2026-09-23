@@ -5,19 +5,19 @@ from rag_backend.rag_pipeline.retrieval.step2_normalize_input import NormalizedQ
 from rag_backend.rag_pipeline.retrieval.step3_embedding_question import embed_question
 
 
-def test_embed_question_produces_vector_of_configured_dimension() -> None:
+async def test_embed_question_produces_vector_of_configured_dimension() -> None:
     query = NormalizedQuery(text="how many days of leave")
 
-    embedded = embed_question(query)
+    embedded = await embed_question(query)
 
     assert len(embedded.embedding) == settings.embedding_dimension
     assert embedded.text == "how many days of leave"
 
 
-def test_embed_question_is_deterministic() -> None:
+async def test_embed_question_is_deterministic() -> None:
     query = NormalizedQuery(text="same question")
 
-    first = embed_question(query)
-    second = embed_question(query)
+    first = await embed_question(query)
+    second = await embed_question(query)
 
     assert first.embedding == second.embedding

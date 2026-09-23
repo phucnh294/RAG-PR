@@ -19,9 +19,10 @@ def test_build_prompt_includes_context_when_citations_exist() -> None:
     assert "[1] (f.md) hello" in messages[0]["content"]
 
 
-def test_build_prompt_uses_no_context_prompt_when_no_citations() -> None:
+def test_build_prompt_asks_the_llm_to_say_it_does_not_know_when_no_citations() -> None:
     context = CombinedContext(citations=[], context_text="")
 
     messages = build_prompt("anything?", context)
 
-    assert "No relevant documents were found" in messages[0]["content"]
+    assert "say you" in messages[0]["content"]
+    assert messages[1] == {"role": "user", "content": "anything?"}

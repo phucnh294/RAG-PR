@@ -2,7 +2,7 @@
 
 A production-oriented Retrieval-Augmented Generation (RAG) system: a React chat/upload UI, a Python (FastAPI) backend, and locally-hosted LLM/embedding models — each service running in its own Docker container.
 
-> **Status:** early-stage. The upload + chat API and UI work end-to-end, with a real local LLM (Ollama) generating answers over an 8-step indexing pipeline and a 10-step retrieval pipeline. Documents, chunks, and embeddings persist in a real Postgres+pgvector container (`rag_documents`/`rag_chunks`/`rag_embeddings`) — similarity search runs as an actual pgvector `<=>` query, not in-memory. Embeddings are still a deterministic stub, not a real model. See [Plan & documentation](#plan--documentation) for the full roadmap.
+> **Status:** early-stage. The upload + chat API and UI work end-to-end, with a real local LLM (Ollama) generating answers over an 8-step indexing pipeline and a 10-step retrieval pipeline. Documents, chunks, and embeddings persist in a real Postgres+pgvector container (`rag_documents`/`rag_chunks`/`rag_embeddings`) — similarity search runs as an actual pgvector `<=>` query, not in-memory. Embeddings are produced by a dedicated `nomic-embed-text` Ollama container, not a stub. See [Plan & documentation](#plan--documentation) for the full roadmap.
 
 ## Stack
 
@@ -11,7 +11,7 @@ A production-oriented Retrieval-Augmented Generation (RAG) system: a React chat/
 | Frontend | React + TypeScript, built with Vite, served by nginx |
 | Backend API | Python, FastAPI, uvicorn |
 | LLM | Ollama, running `qwen2.5:0.5b-instruct` in its own container |
-| Embeddings | Deterministic stub (bag-of-words hashing) — a dedicated Ollama `nomic-embed-text` container is planned |
+| Embeddings | Ollama, running `nomic-embed-text` in its own dedicated container |
 | Vector store | Postgres + pgvector (`pgvector/pgvector:pg16`) — the backend's document/chunk/embedding store |
 | Orchestration | Docker Compose |
 
@@ -26,6 +26,9 @@ RAG/
 ├── llm-model/                  # Ollama container dedicated to chat/generation
 │   ├── Dockerfile
 │   └── entrypoint.sh           # starts Ollama, pulls the configured model
+├── embedding-model/             # Ollama container dedicated to embeddings (nomic-embed-text)
+│   ├── Dockerfile
+│   └── entrypoint.sh
 ├── backend/                    # FastAPI application
 │   ├── Dockerfile
 │   ├── pyproject.toml
@@ -37,7 +40,8 @@ RAG/
 │   │   ├── pipeline_logging.py # writes the per-run JSON log files under pipeline-logs/
 │   │   ├── api/                # routes: upload, chat, health, logs
 │   │   ├── llm_model/          # client for the llm-model container
-│   │   ├── embedding_model/    # stub embedding client (bag-of-words hashing)
+│   │   ├── embedding_model/    # client for the embedding-model container (+ fake_client.py
+│   │   │                       # — the old hash-based stub, now used only by the test suite)
 │   │   ├── db/                 # session.py (asyncpg pool) + postgres_store.py (real store)
 │   │   ├── schemas/            # pydantic request/response models
 │   │   └── storage/            # records.py (shared dataclasses) + dummy_store.py
@@ -65,7 +69,7 @@ Coding conventions and where new documentation belongs are defined in [`CLAUDE.m
 
 ## Running with Docker (recommended)
 
-Brings up four containers: `postgres` (pgvector-enabled Postgres), `llm-model` (Ollama), `backend` (FastAPI), `frontend` (nginx-served React build).
+Brings up five containers: `postgres` (pgvector-enabled Postgres), `llm-model` (Ollama, chat), `embedding-model` (Ollama, `nomic-embed-text`), `backend` (FastAPI), `frontend` (nginx-served React build).
 
 First, create your local env file (gitignored — never commit it):
 
@@ -79,7 +83,7 @@ Then:
 docker compose up -d --build
 ```
 
-First run will download the Ollama base image and pull the chat model (a few hundred MB), so `llm-model` may take a minute or two to report healthy. Check status with:
+First run will download the Ollama base image and pull the chat and embedding models (a few hundred MB each), so `llm-model` and `embedding-model` may take a minute or two to report healthy. Check status with:
 
 ```bash
 docker compose ps
@@ -116,6 +120,8 @@ Environment variables (set in `docker-compose.yml` or an `.env` file) control th
 |---|---|---|
 | `LLM_BASE_URL` | `http://llm-model:11434` | Where the backend reaches the Ollama chat container |
 | `LLM_MODEL_NAME` | `qwen2.5:0.5b-instruct` | Model pulled by `llm-model` and used for chat |
+| `EMBEDDING_BASE_URL` | `http://embedding-model:11434` | Where the backend reaches the Ollama embedding container |
+| `EMBEDDING_MODEL_NAME` | `nomic-embed-text` | Model pulled by `embedding-model`; also stored as `rag_embeddings.model` |
 | `MAX_UPLOAD_SIZE_MB` | `25` | Upload size limit |
 | `ALLOWED_MIME_TYPES` | pdf, txt, md | Accepted upload types |
 
@@ -133,13 +139,13 @@ pip install -e ".[dev]"
 uvicorn rag_backend.main:app --reload
 ```
 
-The backend seeds 3 documents into Postgres on first startup (skipped if any document already exists). By default it expects an Ollama instance at `http://llm-model:11434` (the Docker service name) and Postgres at `localhost:5433` (the host-mapped port — see [Running with Docker](#running-with-docker-recommended)); when running outside Docker with `docker compose up -d postgres llm-model` still providing those two containers, override the LLM URL:
+The backend seeds 3 documents into Postgres on first startup (skipped if any document already exists). By default it expects Ollama instances at `http://llm-model:11434` and `http://embedding-model:11434` (the Docker service names) and Postgres at `localhost:5433` (the host-mapped port — see [Running with Docker](#running-with-docker-recommended)); when running outside Docker with `docker compose up -d postgres llm-model embedding-model` still providing those three containers, override the Ollama URLs:
 
 ```bash
-LLM_BASE_URL=http://localhost:11434 uvicorn rag_backend.main:app --reload
+LLM_BASE_URL=http://localhost:11434 EMBEDDING_BASE_URL=http://localhost:11435 uvicorn rag_backend.main:app --reload
 ```
 
-(This assumes an Ollama instance is running locally on port 11434 with the configured model pulled, and a reachable Postgres instance — `postgres_host`/`postgres_port` default to `localhost:5433` in `config.py` for this exact case.)
+(This assumes both models are pulled and reachable — since `llm-model` and `embedding-model` both listen on Ollama's default `11434` inside their own containers, publish them to different host ports if running both this way, or run each against a locally-installed Ollama serving both models on one port. `postgres_host`/`postgres_port` default to `localhost:5433` in `config.py` for this exact case.)
 
 Run tests:
 
@@ -165,7 +171,8 @@ npm run build
 
 ## Current limitations
 
-- Embeddings are a deterministic bag-of-words hashing stub, not a real model — pgvector similarity search reflects word overlap, not semantic meaning. `min_similarity_score` is tuned for this stub and will need recalibrating once a real embedding model replaces it.
+- Documents indexed before the switch to `nomic-embed-text` (e.g. the 3 seeded documents on an existing database volume) still hold vectors from the old hash-based stub — incompatible with nomic's vector space. There is no bulk re-index tool yet; for clean local testing, drop and recreate the Postgres volume (`docker compose down -v postgres && docker compose up -d`) so everything gets re-embedded with the real model.
+- `min_similarity_score` (0.7) was set from a single live sample (3 seeded documents): a true match scored ~0.91 while unrelated documents scored 0.60-0.62 for the same query — real semantic embeddings have a much higher "noise floor" than the old hash stub did. Revisit with more/varied documents; this is not a rigorously tuned value.
 - The `rag_documents`/`rag_chunks`/`rag_embeddings` schema (`postgres/init/01-create-extension.sql`) was originally shaped for embedding this repo's own `rag-ai-local/*.md` knowledge base; app-uploaded documents reuse the same columns (e.g. `metadata` jsonb holds `content_hash`/`size_bytes`/`excerpts` rather than dedicated columns).
 - No schema migration tool (Alembic, etc.) — the schema is applied once via the Postgres init script; changing it on a running database currently means a manual `psql` command or a volume reset.
 - No authentication or rate limiting.
