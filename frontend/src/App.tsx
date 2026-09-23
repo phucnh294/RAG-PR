@@ -11,12 +11,30 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "logs", label: "Logs" },
 ];
 
+const MOBILE_BREAKPOINT_PX = 768;
+
+function isMobileViewport(): boolean {
+  return typeof window !== "undefined" && window.innerWidth <= MOBILE_BREAKPOINT_PX;
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("chat");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobileViewport());
+
+  function selectTab(id: Tab) {
+    setTab(id);
+    // On a phone the sidebar is a full-screen overlay — close it once a tab is
+    // picked so the user immediately sees the page instead of the drawer.
+    if (isMobileViewport()) {
+      setSidebarOpen(false);
+    }
+  }
 
   return (
     <div className="app">
+      {sidebarOpen && (
+        <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+      )}
       {sidebarOpen && (
         <aside className="sidebar">
           <h1 className="sidebar-title">RAG Assistant</h1>
@@ -25,7 +43,7 @@ export default function App() {
               <button
                 key={item.id}
                 className={tab === item.id ? "active" : ""}
-                onClick={() => setTab(item.id)}
+                onClick={() => selectTab(item.id)}
               >
                 {item.label}
               </button>
@@ -51,7 +69,7 @@ export default function App() {
                   <button
                     key={item.id}
                     className={tab === item.id ? "active" : ""}
-                    onClick={() => setTab(item.id)}
+                    onClick={() => selectTab(item.id)}
                   >
                     {item.label}
                   </button>
