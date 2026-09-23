@@ -19,8 +19,13 @@ services:
 
   llm-model:
     build: ./llm-model
-    environment:
-      LLM_MODEL_NAME: qwen2.5:0.5b-instruct
+    env_file: .env
+    ports:
+      # Host port 8001 -> Ollama's own 11434, so the model can be verified
+      # directly (e.g. `curl http://localhost:8001/api/tags`) without going
+      # through the backend. Internal service-to-service calls still use
+      # http://llm-model:11434 over the Docker network, unaffected by this.
+      - "8001:11434"
     volumes:
       - llm_models:/root/.ollama
     healthcheck:
@@ -33,8 +38,7 @@ services:
 
   embedding-model:
     build: ./embedding-model
-    environment:
-      EMBEDDING_MODEL_NAME: nomic-embed-text
+    env_file: .env
     volumes:
       - embedding_models:/root/.ollama
     healthcheck:
@@ -51,12 +55,14 @@ services:
       - "8000:8000"
     env_file: .env
     environment:
+      # Everything else (LLM_PROVIDER, LLM_MODEL_NAME, GOOGLE_API_KEY, GOOGLE_MODEL_NAME,
+      # EMBEDDING_MODEL_NAME, ...) comes straight from .env above — change it there, not
+      # here. Only the Docker-network-internal addresses below stay hardcoded: they're
+      # fixed by this compose file's own service names/ports, not something .env controls.
       LLM_BASE_URL: http://llm-model:11434
-      LLM_MODEL_NAME: qwen2.5:0.5b-instruct
       EMBEDDING_BASE_URL: http://embedding-model:11434
-      EMBEDDING_MODEL_NAME: nomic-embed-text
-      # Internal Docker network: the postgres container's own port (always 5432),
-      # not the 5433 host-mapped port used by external tools like DBeaver.
+      # postgres container's own port (always 5432), not the 5433 host-mapped port
+      # used by external tools like DBeaver.
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
     volumes:
