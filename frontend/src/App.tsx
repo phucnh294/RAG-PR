@@ -1,14 +1,16 @@
 import { useState } from "react";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
+import EvalsPage from "./pages/EvalsPage";
 import LogsPage from "./pages/LogsPage";
 
-type Tab = "chat" | "documents" | "logs";
+type Tab = "chat" | "documents" | "logs" | "evals";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "documents", label: "Documents" },
   { id: "logs", label: "Logs" },
+  { id: "evals", label: "Evals" },
 ];
 
 const MOBILE_BREAKPOINT_PX = 768;
@@ -81,6 +83,7 @@ export default function App() {
         {tab === "chat" && <ChatPage />}
         {tab === "documents" && <DocumentsPage />}
         {tab === "logs" && <LogsPage />}
+        {tab === "evals" && <EvalsPage />}
       </main>
     </div>
   );
