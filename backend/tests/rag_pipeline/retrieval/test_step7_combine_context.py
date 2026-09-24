@@ -45,3 +45,29 @@ async def test_combine_context_returns_empty_when_nothing_survives() -> None:
 
     assert result.citations == []
     assert result.context_text == ""
+    assert result.evidence.level == "none"
+    assert result.evidence.top_score is None
+    assert result.evidence.surviving_chunk_count == 0
+
+
+async def test_combine_context_evidence_level_high_for_strong_scores() -> None:
+    doc = await dummy_store.add_document(
+        filename="handbook.md", content_hash="h1", mime_type="text/markdown", size_bytes=10
+    )
+    chunks = [_scored_chunk(doc.id, "kept content", settings.guardrail_evidence_high_threshold)]
+
+    result = await combine_context(chunks)
+
+    assert result.evidence.level == "high"
+    assert result.evidence.surviving_chunk_count == 1
+
+
+async def test_combine_context_evidence_level_low_just_above_min_similarity() -> None:
+    doc = await dummy_store.add_document(
+        filename="handbook.md", content_hash="h1", mime_type="text/markdown", size_bytes=10
+    )
+    chunks = [_scored_chunk(doc.id, "kept content", settings.min_similarity_score + 0.001)]
+
+    result = await combine_context(chunks)
+
+    assert result.evidence.level == "low"

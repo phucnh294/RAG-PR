@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from rag_backend.config import settings
 from rag_backend.db import postgres_store
+from rag_backend.guardrails.schemas import EvidenceSummary
 from rag_backend.rag_pipeline.retrieval.step4_similarity_search import ScoredChunk
 from rag_backend.schemas.chat import Citation
 
@@ -12,6 +13,7 @@ from rag_backend.schemas.chat import Citation
 class CombinedContext:
     citations: list[Citation]
     context_text: str
+    evidence: EvidenceSummary
 
 
 async def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
@@ -37,4 +39,42 @@ async def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
         )
         context_lines.append(f"[{index}] ({filename}) {item.chunk.content}")
 
-    return CombinedContext(citations=citations, context_text="\n".join(context_lines))
+    evidence = _assess_evidence(surviving)
+    return CombinedContext(
+        citations=citations, context_text="\n".join(context_lines), evidence=evidence
+    )
+
+
+def _assess_evidence(surviving: list[ScoredChunk]) -> EvidenceSummary:
+    """Bucket the surviving (post-threshold) chunks by top/mean cosine score.
+
+    Flag-only Layer 2 guardrail signal: purely descriptive of scores already computed
+    in step4, never affects which chunks survive or whether the LLM is called.
+    """
+    if not surviving:
+        return EvidenceSummary(
+            level="none",
+            top_score=None,
+            mean_score=None,
+            surviving_chunk_count=0,
+            threshold=settings.min_similarity_score,
+        )
+
+    scores = [item.similarity_score for item in surviving]
+    top_score = max(scores)
+    mean_score = sum(scores) / len(scores)
+
+    if top_score >= settings.guardrail_evidence_high_threshold:
+        level = "high"
+    elif top_score >= settings.guardrail_evidence_medium_threshold:
+        level = "medium"
+    else:
+        level = "low"
+
+    return EvidenceSummary(
+        level=level,
+        top_score=top_score,
+        mean_score=mean_score,
+        surviving_chunk_count=len(surviving),
+        threshold=settings.min_similarity_score,
+    )

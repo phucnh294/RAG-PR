@@ -77,5 +77,26 @@ class Settings(BaseSettings):
     postgres_user: str = "user"
     postgres_password: str = "user"
 
+    # --- Guardrails ---
+    guardrail_input_enabled: bool = True
+    guardrail_output_enabled: bool = True
+    # Layer 2 (evidence) is always flag-only — this toggle only controls whether the
+    # signal is computed; it can never block the LLM call.
+    guardrail_evidence_enabled: bool = True
+    guardrail_max_input_chars: int = 4000
+    # The judge LLM falls back to the main answer LLM's provider/model/base_url when
+    # unset, so guardrails work out of the box with zero extra config. Override these
+    # to point the judge at a cheaper/faster model in production.
+    guardrail_judge_provider: str | None = None
+    guardrail_judge_base_url: str | None = None
+    guardrail_judge_model_name: str | None = None
+    guardrail_judge_timeout_seconds: float = 20.0
+    # Evidence buckets for Layer 2, computed from the same cosine scores as
+    # min_similarity_score above: >= high -> "high", >= medium -> "medium",
+    # >= min_similarity_score -> "low", otherwise (no surviving chunks) -> "none".
+    guardrail_evidence_high_threshold: float = 0.85
+    guardrail_evidence_medium_threshold: float = 0.75
+    guardrail_refusal_message: str = "I can't help with that request."
+
 
 settings = Settings()
