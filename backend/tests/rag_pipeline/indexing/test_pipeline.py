@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from rag_backend.config import settings
+from rag_backend.embedding_model import client as embedding_model_client
+from rag_backend.exceptions import EmbeddingModelError
 from rag_backend.rag_pipeline.indexing.pipeline import run_indexing
 from rag_backend.storage import dummy_store
 
@@ -51,6 +53,32 @@ async def test_run_indexing_marks_document_failed_for_unsupported_pdf() -> None:
     assert updated is not None
     assert updated.status == "failed"
     assert updated.error_message is not None
+    assert await dummy_store.get_chunks(record.id) == []
+
+
+class _TimingOutEmbeddingClient:
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        raise EmbeddingModelError("Embedding request failed: ReadTimeout")
+
+
+async def test_run_indexing_marks_document_failed_when_embedding_model_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(embedding_model_client, "embedding_client", _TimingOutEmbeddingClient())
+    record = await dummy_store.add_document(
+        filename="note.txt", content_hash="h6", mime_type="text/plain", size_bytes=11
+    )
+    doc_dir = settings.input_dir / record.id
+    doc_dir.mkdir(parents=True)
+    (doc_dir / record.filename).write_text("hello world, this is a test", encoding="utf-8")
+
+    await run_indexing(record.id, record.filename, record.mime_type)
+
+    updated = await dummy_store.get_document(record.id)
+    assert updated is not None
+    assert updated.status == "failed"
+    assert updated.error_message is not None
+    assert "ReadTimeout" in updated.error_message
     assert await dummy_store.get_chunks(record.id) == []
 
 
