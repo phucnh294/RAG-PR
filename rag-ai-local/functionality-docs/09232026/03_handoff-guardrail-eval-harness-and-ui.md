@@ -3,7 +3,7 @@ title: Guardrail Evaluation Harness + UI
 date: 2026-09-23
 type: session-handoff
 area: rag-guardrails
-status: implementation-complete
+status: superseded
 session_id: 0c008d26-2ebb-4b3c-b062-c5b25fc33568
 tags: [guardrails, eval, golden-set, recall, mrr, refusal-rate, block-rate, rag-pipeline, backend, frontend]
 supersedes: 09232026/02_handoff-3-layer-guardrail-system.md

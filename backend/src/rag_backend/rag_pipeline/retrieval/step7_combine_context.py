@@ -19,9 +19,15 @@ class CombinedContext:
 async def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
     """Drop chunks below the minimum similarity threshold, then merge the survivors
     into citations plus a single numbered context block for prompt building.
+
+    Chunks the full-text search matched are kept regardless of cosine score: exact
+    identifiers (error codes, config keys, names) are what embeddings rank worst and
+    keywords rank best, so filtering them on cosine would undo hybrid search.
     """
     surviving = [
-        item for item in scored_chunks if item.similarity_score >= settings.min_similarity_score
+        item
+        for item in scored_chunks
+        if item.similarity_score >= settings.min_similarity_score or item.matched_fulltext
     ]
 
     citations: list[Citation] = []

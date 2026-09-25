@@ -14,6 +14,7 @@ for app-uploaded documents too:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -23,6 +24,8 @@ from rag_backend.config import settings
 from rag_backend.db.session import get_pool
 from rag_backend.storage.records import ChunkRecord, DocumentRecord
 from rag_backend.storage.seed_data import SEED_DOCS
+
+logger = logging.getLogger(__name__)
 
 
 def _row_to_document(row: asyncpg.Record) -> DocumentRecord:
@@ -146,8 +149,9 @@ async def add_chunks(document_id: str, chunks: list[ChunkRecord]) -> None:
             chunk_uuid = uuid.UUID(chunk.id)
             await conn.execute(
                 """
-                INSERT INTO rag_chunks (id, document_id, chunk_index, content, token_count, metadata)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO rag_chunks
+                    (id, document_id, chunk_index, content, token_count, metadata, content_tsv)
+                VALUES ($1, $2, $3, $4, $5, $6, to_tsvector($7::regconfig, $4))
                 """,
                 chunk_uuid,
                 doc_uuid,
@@ -155,6 +159,7 @@ async def add_chunks(document_id: str, chunks: list[ChunkRecord]) -> None:
                 chunk.content,
                 chunk.metadata.get("word_count"),
                 chunk.metadata,
+                settings.fulltext_search_config,
             )
             await conn.execute(
                 "INSERT INTO rag_embeddings (id, chunk_id, embedding, model) VALUES ($1, $2, $3, $4)",
@@ -208,6 +213,63 @@ async def search_similar_chunks(
         top_k,
     )
     return [(_row_to_chunk(row), float(row["similarity_score"])) for row in rows]
+
+
+async def search_fulltext_chunks(
+    query_text: str, embedding: list[float], top_k: int
+) -> list[tuple[ChunkRecord, float]]:
+    """Rank chunks by Postgres full-text relevance (ts_rank_cd over content_tsv), descending.
+
+    The question is parsed with plainto_tsquery (stemming + stop-word removal, never a
+    syntax error on user input) and its AND operators are rewritten to OR, so a chunk
+    matching only some of the question's terms still qualifies — AND would demand every
+    term of a natural-language question and almost never match.
+
+    Each row still carries its cosine similarity to `embedding`, so a chunk found only
+    by keywords has a real similarity_score for the threshold/evidence steps downstream.
+    """
+    pool = get_pool()
+    rows = await pool.fetch(
+        """
+        WITH q AS (
+            SELECT replace(plainto_tsquery($3::regconfig, $2)::text, '&', '|')::tsquery AS query
+        )
+        SELECT c.id, c.document_id, c.chunk_index, c.content, c.metadata,
+               e.embedding, 1 - (e.embedding <=> $1::vector) AS similarity_score
+        FROM rag_chunks c
+        JOIN rag_embeddings e ON e.chunk_id = c.id
+        CROSS JOIN q
+        WHERE c.content_tsv @@ q.query
+        ORDER BY ts_rank_cd(c.content_tsv, q.query) DESC
+        LIMIT $4
+        """,
+        embedding,
+        query_text,
+        settings.fulltext_search_config,
+        top_k,
+    )
+    return [(_row_to_chunk(row), float(row["similarity_score"])) for row in rows]
+
+
+async def ensure_fulltext_index() -> None:
+    """Make sure rag_chunks.content_tsv exists, is GIN-indexed, and is filled.
+
+    postgres/init/*.sql only runs on a fresh volume, so databases created before hybrid
+    search need this at startup. Idempotent: the backfill only touches NULL rows.
+    """
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("ALTER TABLE rag_chunks ADD COLUMN IF NOT EXISTS content_tsv tsvector")
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS rag_chunks_content_tsv_idx "
+            "ON rag_chunks USING GIN (content_tsv)"
+        )
+        result = await conn.execute(
+            "UPDATE rag_chunks SET content_tsv = to_tsvector($1::regconfig, content) "
+            "WHERE content_tsv IS NULL",
+            settings.fulltext_search_config,
+        )
+    logger.info("Full-text index ready on rag_chunks.content_tsv (backfill: %s)", result)
 
 
 async def seed() -> None:

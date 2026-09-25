@@ -104,13 +104,20 @@ async def run_retrieval(
                 "document_id": item.chunk.document_id,
                 "chunk_index": item.chunk.chunk_index,
                 "similarity_score": item.similarity_score,
+                "rrf_score": item.rrf_score,
+                "vector_rank": item.vector_rank,
+                "text_rank": item.text_rank,
             }
             for item in scored_chunks
         ]
         record["similarity_search_results"] = similarity_results
         steps.log_output(
             "4_similarity_search",
-            {"result_count": len(scored_chunks), "results": similarity_results},
+            {
+                "search_mode": "hybrid" if settings.hybrid_search_enabled else "vector",
+                "result_count": len(scored_chunks),
+                "results": similarity_results,
+            },
         )
 
         steps.log_input(
