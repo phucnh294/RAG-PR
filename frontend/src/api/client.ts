@@ -1,4 +1,5 @@
 import { authHeaders } from "../auth/identity";
+import type { ChatResponsePayload } from "./streaming";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -221,6 +222,44 @@ export interface RerankComparisonReport {
 export async function runRerankComparison(): Promise<RerankComparisonReport> {
   const response = await apiFetch(`${API_BASE}/eval/rerank-comparison`, { method: "POST" });
   return response.json();
+}
+
+// --- Conversations (server-side chat history; see backend routes_conversations.py) ---
+
+export interface ConversationOut {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationMessageOut {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  standalone_question: string | null;
+  cache_hit: boolean;
+  // The assistant answer's response payload (citations, guardrails, evidence, retrieval).
+  payload: ChatResponsePayload | null;
+}
+
+export interface ConversationDetailOut extends ConversationOut {
+  messages: ConversationMessageOut[];
+}
+
+export async function fetchConversations(): Promise<ConversationOut[]> {
+  const response = await apiFetch(`${API_BASE}/conversations`);
+  return response.json();
+}
+
+export async function fetchConversation(conversationId: string): Promise<ConversationDetailOut> {
+  const response = await apiFetch(`${API_BASE}/conversations/${conversationId}`);
+  return response.json();
+}
+
+export async function deleteConversation(conversationId: string): Promise<void> {
+  await apiFetch(`${API_BASE}/conversations/${conversationId}`, { method: "DELETE" });
 }
 
 export { API_BASE };

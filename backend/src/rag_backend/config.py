@@ -107,6 +107,30 @@ class Settings(BaseSettings):
     # than 32 texts.
     reranker_batch_size: int = 32
 
+    # --- Conversation memory ---
+    # Chat requests belong to a server-side conversation. When memory is on, the last
+    # memory_turns (question, answer) pairs go to the LLM with the new question, and a
+    # follow-up ("what about its limits?") is first rewritten into a standalone question
+    # (step 2c) so retrieval and the semantic cache see a self-contained query. Each chat
+    # request may override memory_enabled / memory_turns (clamped to memory_max_turns).
+    memory_enabled_default: bool = True
+    memory_turns_default: int = 3
+    memory_max_turns: int = 10
+    # Step 2c's LLM rewrite. Off -> history still reaches the answer LLM, but retrieval
+    # and the cache use the question exactly as typed.
+    contextualize_enabled: bool = True
+
+    # --- Semantic cache ---
+    # Answers are cached per ACCESS SCOPE (the asker's sorted allowed classifications)
+    # and only served when the asker can still read every cited document right now, so
+    # a cached answer never leaks across permissions. A hit needs cosine similarity >=
+    # cache_min_similarity between the standalone questions; keep it high — a near
+    # miss returns a confidently wrong answer to a different question.
+    semantic_cache_enabled: bool = True
+    cache_min_similarity: float = 0.95
+    cache_candidate_k: int = 5
+    cache_ttl_seconds: int = 86400
+
     # Postgres connection. Defaults match .env.example / a local `docker compose up`;
     # postgres_host/port are overridden in docker-compose.yml's backend service to
     # reach the postgres container over the internal Docker network (port 5432 there,

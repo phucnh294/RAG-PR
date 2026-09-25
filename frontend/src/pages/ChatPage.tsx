@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { deleteConversation, fetchConversation, fetchConversations } from "../api/client";
 import { streamChat, type ChatOptions } from "../api/streaming";
 import {
-  createSession,
-  loadSessions,
+  createDraftSession,
+  messagesFromServer,
   NEW_CHAT_TITLE,
-  saveSessions,
+  sessionFromConversation,
   titleFromQuestion,
   type ChatSession,
 } from "../chat/sessions";
@@ -16,29 +17,62 @@ interface ChatPageProps {
   userId: string;
 }
 
-function initialSessions(userId: string): ChatSession[] {
-  const stored = loadSessions(userId);
-  return stored.length > 0 ? stored : [createSession()];
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
-function mostRecent(sessions: ChatSession[]): ChatSession {
-  return sessions.reduce((latest, session) =>
-    session.updatedAt > latest.updatedAt ? session : latest,
-  );
-}
-
+// Remounted per user (App keys it by userId), so loading on mount is loading per user.
 export default function ChatPage({ userId }: ChatPageProps) {
-  const [sessions, setSessions] = useState<ChatSession[]>(() => initialSessions(userId));
-  const [activeId, setActiveId] = useState<string>(() => mostRecent(sessions).id);
+  const [initialDraft] = useState(createDraftSession);
+  const [sessions, setSessions] = useState<ChatSession[]>([initialDraft]);
+  const [activeId, setActiveId] = useState<string>(initialDraft.id);
   const [streamingIds, setStreamingIds] = useState<ReadonlySet<string>>(new Set());
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeId) ?? sessions[0];
-  const anyStreaming = streamingIds.size > 0;
 
-  // Persist once answers finish, not on every streamed token.
   useEffect(() => {
-    if (!anyStreaming) saveSessions(userId, sessions);
-  }, [userId, sessions, anyStreaming]);
+    let cancelled = false;
+    fetchConversations()
+      .then((conversations) => {
+        if (cancelled || conversations.length === 0) return;
+        const loaded = conversations.map(sessionFromConversation);
+        // Keep the draft only if something was already typed into it meanwhile.
+        setSessions((prev) => [...prev.filter((session) => session.messages.length > 0), ...loaded]);
+        setActiveId((current) => (current === initialDraft.id ? loaded[0].id : current));
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLoadError(errorText(error, "Could not load conversations"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, initialDraft.id]);
+
+  // Fetch a conversation's messages the first time it is opened.
+  const pendingLoad =
+    !activeSession.loaded && activeSession.conversationId ? activeSession.conversationId : null;
+  useEffect(() => {
+    if (!pendingLoad) return;
+    let cancelled = false;
+    fetchConversation(pendingLoad)
+      .then((detail) => {
+        if (cancelled) return;
+        setSessions((prev) =>
+          prev.map((session) =>
+            session.conversationId === pendingLoad
+              ? { ...session, messages: messagesFromServer(detail.messages), loaded: true }
+              : session,
+          ),
+        );
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLoadError(errorText(error, "Could not load the conversation"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingLoad]);
 
   function updateSession(id: string, update: (session: ChatSession) => ChatSession) {
     setSessions((prev) => prev.map((session) => (session.id === id ? update(session) : session)));
@@ -80,7 +114,9 @@ export default function ChatPage({ userId }: ChatPageProps) {
     try {
       await streamChat(
         question,
+        activeSession.conversationId,
         options,
+        (conversationId) => updateSession(sessionId, (session) => ({ ...session, conversationId })),
         (token) =>
           updateLastMessage(sessionId, (last) => ({ ...last, content: last.content + token })),
         (payload) =>
@@ -95,7 +131,7 @@ export default function ChatPage({ userId }: ChatPageProps) {
     } catch (error) {
       updateLastMessage(sessionId, () => ({
         role: "assistant",
-        content: `Error: ${error instanceof Error ? error.message : "chat request failed"}`,
+        content: `Error: ${errorText(error, "chat request failed")}`,
       }));
     } finally {
       setStreaming(sessionId, false);
@@ -104,26 +140,38 @@ export default function ChatPage({ userId }: ChatPageProps) {
 
   function handleCreate() {
     // Reuse an untouched chat instead of piling up empty "New chat" entries.
-    const empty = sessions.find((session) => session.messages.length === 0);
+    const empty = sessions.find((session) => session.loaded && session.messages.length === 0);
     if (empty) {
       setActiveId(empty.id);
       return;
     }
-    const session = createSession();
+    const session = createDraftSession();
     setSessions((prev) => [...prev, session]);
     setActiveId(session.id);
   }
 
-  function handleDelete(id: string) {
-    const remaining = sessions.filter((session) => session.id !== id);
+  async function handleDelete(id: string) {
+    const session = sessions.find((item) => item.id === id);
+    if (session?.conversationId) {
+      try {
+        await deleteConversation(session.conversationId);
+      } catch (error) {
+        setLoadError(errorText(error, "Could not delete the conversation"));
+        return;
+      }
+    }
+    const remaining = sessions.filter((item) => item.id !== id);
     if (remaining.length === 0) {
-      const session = createSession();
-      setSessions([session]);
-      setActiveId(session.id);
+      const draft = createDraftSession();
+      setSessions([draft]);
+      setActiveId(draft.id);
       return;
     }
     setSessions(remaining);
-    if (id === activeId) setActiveId(mostRecent(remaining).id);
+    if (id === activeId) {
+      const next = remaining.reduce((latest, item) => (item.updatedAt > latest.updatedAt ? item : latest));
+      setActiveId(next.id);
+    }
   }
 
   return (
@@ -140,6 +188,8 @@ export default function ChatPage({ userId }: ChatPageProps) {
         title={activeSession.title === NEW_CHAT_TITLE ? null : activeSession.title}
         messages={activeSession.messages}
         isStreaming={streamingIds.has(activeSession.id)}
+        isLoading={!activeSession.loaded}
+        error={loadError}
         onSend={handleSend}
       />
     </section>

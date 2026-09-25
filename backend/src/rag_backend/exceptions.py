@@ -39,6 +39,19 @@ class RerankerModelError(RagBackendError):
     """
 
 
+class ConversationNotFoundError(RagBackendError):
+    """Raised when a conversation id does not exist OR belongs to another user (HTTP 404,
+    so the API never confirms that someone else's conversation exists)."""
+
+
+class SemanticCacheError(RagBackendError):
+    """Raised when the semantic cache table cannot be read or written.
+
+    The retrieval pipeline treats it as a cache miss (lookup) or a skipped store, so a
+    cache outage only costs latency, never a failed chat request.
+    """
+
+
 class AuthError(RagBackendError):
     """Base class for authentication/authorization failures."""
 

@@ -17,11 +17,15 @@ from __future__ import annotations
 import math
 import re
 import uuid
-from dataclasses import replace
-from datetime import UTC, date, datetime
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from rag_backend.auth.models import UserRecord
 from rag_backend.config import settings
+from rag_backend.conversations.models import ConversationRecord, MessageRecord
+from rag_backend.semantic_cache.models import CacheCandidate, NewCacheEntry
 from rag_backend.storage.records import ChunkRecord, DocumentRecord
 from rag_backend.storage.seed_data import SEED_DOCS
 
@@ -34,13 +38,37 @@ _access: set[tuple[str, str]] = set()
 _seeded_grants: set[tuple[str, str]] = set()
 # Document fields the real table has but DocumentRecord doesn't expose, keyed by doc id.
 _document_extras: dict[str, dict[str, object]] = {}
+_conversations: dict[str, ConversationRecord] = {}
+# Insertion order is message order (the real table orders by created_at).
+_messages: list[MessageRecord] = []
+
+
+@dataclass
+class _CacheRow:
+    id: str
+    entry: NewCacheEntry
+    expires_at: datetime
+    hit_count: int = 0
+
+
+_cache: dict[str, _CacheRow] = {}
 
 
 def reset() -> None:
-    for store in (_documents, _chunks, _users, _roles, _classifications, _document_extras):
+    for store in (
+        _documents,
+        _chunks,
+        _users,
+        _roles,
+        _classifications,
+        _document_extras,
+        _conversations,
+        _cache,
+    ):
         store.clear()
     _access.clear()
     _seeded_grants.clear()
+    _messages.clear()
 
 
 # --- permission view equivalents ---
@@ -86,6 +114,16 @@ async def get_document(document_id: str, user_id: str) -> DocumentRecord | None:
     if document is None or document.classification not in _readable_classifications(user_id):
         return None
     return _with_creator(document)
+
+
+async def count_accessible_documents(document_ids: list[str], user_id: str) -> int:
+    readable = _readable_classifications(user_id)
+    return sum(
+        1
+        for document_id in set(document_ids)
+        if (document := _documents.get(document_id)) is not None
+        and document.classification in readable
+    )
 
 
 async def get_document_unscoped(document_id: str) -> DocumentRecord | None:
@@ -401,3 +439,133 @@ async def revoke_access(role: str, classification: str) -> bool:
         return False
     _access.discard((role, classification))
     return True
+
+
+# --- conversation repository equivalents (see rag_backend.conversations.repository) ---
+
+
+async def create_conversation(user_id: str, title: str) -> ConversationRecord:
+    now = datetime.now(UTC)
+    record = ConversationRecord(
+        id=str(uuid.uuid4()), user_id=user_id, title=title, created_at=now, updated_at=now
+    )
+    _conversations[record.id] = record
+    return record
+
+
+async def get_conversation(conversation_id: str, user_id: str) -> ConversationRecord | None:
+    record = _conversations.get(conversation_id)
+    return record if record is not None and record.user_id == user_id else None
+
+
+async def list_conversations(user_id: str) -> list[ConversationRecord]:
+    owned = [record for record in _conversations.values() if record.user_id == user_id]
+    return sorted(owned, key=lambda record: record.updated_at, reverse=True)
+
+
+async def delete_conversation(conversation_id: str, user_id: str) -> bool:
+    if await get_conversation(conversation_id, user_id) is None:
+        return False
+    del _conversations[conversation_id]
+    _messages[:] = [m for m in _messages if m.conversation_id != conversation_id]
+    return True
+
+
+async def add_message(
+    conversation_id: str,
+    role: str,
+    content: str,
+    standalone_question: str | None = None,
+    request_id: str | None = None,
+    cache_hit: bool = False,
+    payload: dict[str, Any] | None = None,
+) -> MessageRecord:
+    now = datetime.now(UTC)
+    message = MessageRecord(
+        id=str(uuid.uuid4()),
+        conversation_id=conversation_id,
+        role=role,
+        content=content,
+        created_at=now,
+        standalone_question=standalone_question,
+        request_id=request_id,
+        cache_hit=cache_hit,
+        payload=payload,
+    )
+    _messages.append(message)
+    conversation = _conversations[conversation_id]
+    _conversations[conversation_id] = replace(conversation, updated_at=now)
+    return message
+
+
+async def get_messages(conversation_id: str) -> list[MessageRecord]:
+    return [m for m in _messages if m.conversation_id == conversation_id]
+
+
+async def get_recent_messages(conversation_id: str, limit: int) -> list[MessageRecord]:
+    return (await get_messages(conversation_id))[-limit:] if limit > 0 else []
+
+
+# --- semantic cache repository equivalents (see rag_backend.semantic_cache.repository) ---
+
+
+async def find_cache_candidates(
+    embedding: list[float],
+    access_scope: list[str],
+    llm_model_name: str,
+    embedding_model_name: str,
+    limit: int,
+) -> list[CacheCandidate]:
+    now = datetime.now(UTC)
+    candidates = [
+        CacheCandidate(
+            id=row.id,
+            question=row.entry.question,
+            answer=row.entry.answer,
+            citations=row.entry.citations,
+            evidence=row.entry.evidence,
+            cited_document_ids=row.entry.cited_document_ids,
+            similarity=_cosine_similarity(embedding, row.entry.embedding),
+        )
+        for row in _cache.values()
+        if row.entry.access_scope == access_scope
+        and row.entry.llm_model_name == llm_model_name
+        and row.entry.embedding_model_name == embedding_model_name
+        and row.expires_at > now
+    ]
+    candidates.sort(key=lambda candidate: candidate.similarity, reverse=True)
+    return candidates[:limit]
+
+
+async def insert_cache_entry(entry: NewCacheEntry) -> str:
+    row = _CacheRow(
+        id=str(uuid.uuid4()),
+        entry=entry,
+        expires_at=datetime.now(UTC) + timedelta(seconds=entry.ttl_seconds),
+    )
+    _cache[row.id] = row
+    return row.id
+
+
+async def increment_cache_hit(entry_id: str) -> None:
+    if entry_id in _cache:
+        _cache[entry_id].hit_count += 1
+
+
+def _delete_cache_where(matches: Callable[[NewCacheEntry], bool]) -> int:
+    doomed = [entry_id for entry_id, row in _cache.items() if matches(row.entry)]
+    for entry_id in doomed:
+        del _cache[entry_id]
+    return len(doomed)
+
+
+async def delete_cache_for_document(document_id: str) -> int:
+    return _delete_cache_where(lambda entry: document_id in entry.cited_document_ids)
+
+
+async def delete_cache_for_classification(classification: str) -> int:
+    return _delete_cache_where(lambda entry: classification in entry.access_scope)
+
+
+async def clear_cache() -> int:
+    return _delete_cache_where(lambda entry: True)

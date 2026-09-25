@@ -12,7 +12,8 @@ from rag_backend.auth import service as auth_service
 from rag_backend.auth.dependencies import USER_ID_HEADER
 from rag_backend.auth.models import ADMIN_ROLE, CurrentUser
 from rag_backend.config import Settings, settings
-from rag_backend.db import authz_schema, postgres_store
+from rag_backend.conversations import repository as conversation_repository
+from rag_backend.db import authz_schema, chat_schema, postgres_store
 from rag_backend.db import session as db_session
 from rag_backend.embedding_model import client as embedding_model_client
 from rag_backend.embedding_model import fake_client as fake_embedding_client
@@ -21,6 +22,7 @@ from rag_backend.llm_model.client import LlmClient
 from rag_backend.main import create_app
 from rag_backend.reranker_model import client as reranker_model_client
 from rag_backend.reranker_model import fake_client as fake_reranker_client
+from rag_backend.semantic_cache import repository as cache_repository
 from rag_backend.storage import dummy_store
 
 
@@ -43,6 +45,7 @@ _STORE_FUNCTIONS = (
     "list_documents",
     "get_document",
     "get_document_unscoped",
+    "count_accessible_documents",
     "find_existing",
     "add_document",
     "update_document",
@@ -76,6 +79,25 @@ _AUTH_REPOSITORY_FUNCTIONS = (
     "revoke_access",
 )
 
+_CONVERSATION_REPOSITORY_FUNCTIONS = (
+    "create_conversation",
+    "get_conversation",
+    "list_conversations",
+    "delete_conversation",
+    "add_message",
+    "get_messages",
+    "get_recent_messages",
+)
+
+_CACHE_REPOSITORY_FUNCTIONS = (
+    "find_cache_candidates",
+    "insert_cache_entry",
+    "increment_cache_hit",
+    "delete_cache_for_document",
+    "delete_cache_for_classification",
+    "clear_cache",
+)
+
 
 async def _noop_pool_lifecycle() -> None:
     return None
@@ -98,8 +120,9 @@ def _default_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _fake_postgres_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Route every rag_backend.db.postgres_store and rag_backend.auth.repository call to
-    the in-memory dummy_store, and make the schema/pool startup steps no-ops.
+    """Route every rag_backend.db.postgres_store, auth.repository, conversations.repository
+    and semantic_cache.repository call to the in-memory dummy_store, and make the
+    schema/pool startup steps no-ops.
 
     Pipeline/route code always calls "postgres_store.xxx(...)" / "repository.xxx(...)" —
     this makes tests exercise that exact code path without a live Postgres connection.
@@ -108,9 +131,14 @@ def _fake_postgres_store(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(postgres_store, name, getattr(dummy_store, name))
     for name in _AUTH_REPOSITORY_FUNCTIONS:
         monkeypatch.setattr(auth_repository, name, getattr(dummy_store, name))
+    for name in _CONVERSATION_REPOSITORY_FUNCTIONS:
+        monkeypatch.setattr(conversation_repository, name, getattr(dummy_store, name))
+    for name in _CACHE_REPOSITORY_FUNCTIONS:
+        monkeypatch.setattr(cache_repository, name, getattr(dummy_store, name))
     monkeypatch.setattr(db_session, "init_pool", _noop_pool_lifecycle)
     monkeypatch.setattr(db_session, "close_pool", _noop_pool_lifecycle)
     monkeypatch.setattr(authz_schema, "ensure_authorization_schema", _noop_pool_lifecycle)
+    monkeypatch.setattr(chat_schema, "ensure_chat_schema", _noop_pool_lifecycle)
     monkeypatch.setattr(
         authz_schema, "finalize_document_ownership", _noop_finalize_document_ownership
     )

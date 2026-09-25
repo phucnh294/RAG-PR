@@ -15,6 +15,7 @@ from rag_backend.db import postgres_store
 from rag_backend.rag_pipeline.indexing.frontmatter import classification_hint
 from rag_backend.rag_pipeline.indexing.pipeline import run_indexing
 from rag_backend.schemas.documents import DocumentOut, UploadResponse
+from rag_backend.semantic_cache import service as semantic_cache_service
 from rag_backend.storage.records import DocumentRecord
 
 router = APIRouter(tags=["documents"])
@@ -139,6 +140,7 @@ async def delete_document(document_id: str, user: CurrentUserDep) -> None:
             status_code=403, detail="Only the document's creator or an admin can delete it"
         )
     await postgres_store.delete_document(document_id)
+    await semantic_cache_service.invalidate_document(document_id)
     doc_dir = settings.input_dir / document_id
     if doc_dir.exists():
         shutil.rmtree(doc_dir)

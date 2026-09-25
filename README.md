@@ -121,6 +121,20 @@ curl http://localhost:8000/logs/retrieval/<log-id>     # full record for one run
 
 Step 6 of retrieval can reorder the hybrid-search candidates with a cross-encoder. Switch it per message with the **Rerank results with cross-encoder** checkbox in the chat (or `"rerank": true` in the `POST /chat` body). With it on, hybrid search returns `RERANK_CANDIDATE_K` candidates, the cross-encoder scores each (question, chunk) pair, and the best `RETRIEVAL_TOP_K` go on to the prompt. If `reranker-model` is down, chat still answers in hybrid order and shows "Rerank failed".
 
+### Conversations, memory and the semantic cache
+
+Chats are stored on the server. `POST /chat` takes an optional `conversation_id`; without one it starts a new conversation and returns its id in the `X-Conversation-Id` header and the payload's `conversation_id`. `GET /conversations`, `GET /conversations/{id}` and `DELETE /conversations/{id}` list, open and delete the caller's own conversations. Nobody else can see them, admins included.
+
+With **Conversation memory** on (`memory_enabled` / `memory_turns` in the request, defaulting to `MEMORY_ENABLED_DEFAULT` / `MEMORY_TURNS_DEFAULT`), a follow-up is first rewritten into a standalone question using the last turns ("what about its limits?" becomes a full question). The rewritten question is embedded, searched and used as the cache key, and the turns are sent to the LLM with it.
+
+Answers are cached in pgvector (`semantic_cache` table) and reused for a near-identical standalone question, but only when **all** of these hold:
+
+- the asker's access scope (their allowed classifications) is exactly the one the answer was built under;
+- the asker can still read every cited document;
+- the similarity is at least `CACHE_MIN_SIMILARITY`.
+
+A user never gets an answer built from documents they can't read, and a manager never gets a user-level answer. Cached answers are dropped when a document is indexed into a classification their scope can read, or when a cited document is deleted. They also expire after `CACHE_TTL_SECONDS`. Admins can flush everything with `DELETE /cache`. Evals always bypass the cache.
+
 To measure whether reranking helps, run **Evals → Rerank Comparison** (admin), or call it directly:
 
 ```bash
@@ -144,6 +158,14 @@ Environment variables (set in `docker-compose.yml` or an `.env` file) control th
 | `RERANKER_THREADS` | `6` | ONNX Runtime threads in `reranker-model` (about your physical core count) |
 | `RERANK_ENABLED_DEFAULT` | `false` | Rerank when a `/chat` request doesn't say (the UI always sends its toggle) |
 | `RERANK_CANDIDATE_K` | `10` | Hybrid candidates handed to the cross-encoder before the final `RETRIEVAL_TOP_K` cut; latency grows linearly with it |
+| `MEMORY_ENABLED_DEFAULT` | `true` | Conversation memory when a `/chat` request doesn't say (the UI always sends its toggle) |
+| `MEMORY_TURNS_DEFAULT` | `3` | Previous question/answer turns sent to the LLM when a request doesn't say |
+| `MEMORY_MAX_TURNS` | `10` | Upper bound for a request's `memory_turns` |
+| `CONTEXTUALIZE_ENABLED` | `true` | Rewrite follow-ups into standalone questions before embedding and the cache lookup (one extra LLM call per follow-up) |
+| `SEMANTIC_CACHE_ENABLED` | `true` | Reuse answers for near-identical questions (permission-locked, see above) |
+| `CACHE_MIN_SIMILARITY` | `0.95` | Cosine similarity a cached question needs to count as the same question |
+| `CACHE_CANDIDATE_K` | `5` | Nearest cache entries checked per lookup |
+| `CACHE_TTL_SECONDS` | `86400` | How long a cached answer lives |
 | `MAX_UPLOAD_SIZE_MB` | `25` | Upload size limit |
 | `ALLOWED_MIME_TYPES` | pdf, txt, md | Accepted upload types |
 

@@ -81,7 +81,10 @@ async def _evaluate_entry(
     # Rerank pinned off: this report measures guardrails and the hybrid baseline; the
     # reranker's effect is measured separately (and on the same pool) by
     # eval/rerank_comparison.py.
-    chunks = [chunk async for chunk in run_retrieval(entry.query, user, rerank_enabled=False)]
+    chunks = [
+        chunk
+        async for chunk in run_retrieval(entry.query, user, rerank_enabled=False, use_cache=False)
+    ]
     body = b"".join(chunks).decode("utf-8")
     answer_text, _, payload_json = body.partition(CITATIONS_MARKER)
     payload = json.loads(payload_json)

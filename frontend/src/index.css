@@ -323,6 +323,24 @@ body {
   color: #b91c1c;
 }
 
+.retrieval-note.cache {
+  color: #1d4ed8;
+}
+
+.retrieval-note.memory {
+  color: #6b21a8;
+}
+
+.chat-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 1.25rem;
+}
+
+.chat-options .memory-turns {
+  width: 3.5rem;
+}
+
 .document-list {
   width: 100%;
   border-collapse: collapse;
