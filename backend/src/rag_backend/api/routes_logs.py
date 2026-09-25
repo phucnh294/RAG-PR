@@ -9,6 +9,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from rag_backend.auth.dependencies import CurrentUserDep
+from rag_backend.auth.models import CurrentUser
 from rag_backend.config import settings
 from rag_backend.schemas.logs import LogDetail, LogSummary
 
@@ -32,16 +34,31 @@ def _parse_created_at(file_stem: str) -> str:
         return timestamp_part
 
 
+def _owner_id(pipeline: str, record: dict[str, Any]) -> str | None:
+    """Who a log belongs to: the asker (retrieval) or the uploader (indexing)."""
+    owner = record.get("user_id") if pipeline == "retrieval" else record.get("created_by")
+    return str(owner) if owner else None
+
+
+def _can_view(user: CurrentUser, pipeline: str, record: dict[str, Any]) -> bool:
+    """Admins see every log; everyone else only their own questions and uploads, since
+    logs hold full messages, prompts and retrieved chunks."""
+    return user.is_admin or _owner_id(pipeline, record) == user.id
+
+
 def _summarize(pipeline: str, file_stem: str, record: dict[str, Any]) -> LogSummary:
     if pipeline == "retrieval":
         summary = str(record.get("user_message", ""))
+        username = record.get("username")
     else:
         summary = f"{record.get('filename', '?')} -> {record.get('status', '?')}"
+        username = record.get("created_by_username")
     return LogSummary(
         id=file_stem,
         pipeline=pipeline,
         created_at=_parse_created_at(file_stem),
         summary=summary[:_SUMMARY_MAX_CHARS],
+        username=str(username) if username else None,
     )
 
 
@@ -53,7 +70,9 @@ def _read_log_files(pipeline: str) -> list[Path]:
 
 
 @router.get("", response_model=list[LogSummary])
-async def list_logs(pipeline: str | None = Query(default=None)) -> list[LogSummary]:
+async def list_logs(
+    user: CurrentUserDep, pipeline: str | None = Query(default=None)
+) -> list[LogSummary]:
     if pipeline is not None and pipeline not in _PIPELINES:
         raise HTTPException(status_code=400, detail=f"Unknown pipeline: {pipeline}")
     pipelines = (pipeline,) if pipeline is not None else _PIPELINES
@@ -66,14 +85,15 @@ async def list_logs(pipeline: str | None = Query(default=None)) -> list[LogSumma
             except (OSError, json.JSONDecodeError):
                 logger.warning("Skipping unreadable pipeline log file: %s", path)
                 continue
-            summaries.append(_summarize(name, path.stem, record))
+            if _can_view(user, name, record):
+                summaries.append(_summarize(name, path.stem, record))
 
     summaries.sort(key=lambda item: item.id, reverse=True)
     return summaries[:_MAX_LOGS_RETURNED]
 
 
 @router.get("/{pipeline}/{log_id}", response_model=LogDetail)
-async def get_log(pipeline: str, log_id: str) -> LogDetail:
+async def get_log(pipeline: str, log_id: str, user: CurrentUserDep) -> LogDetail:
     if pipeline not in _PIPELINES:
         raise HTTPException(status_code=404, detail=f"Unknown pipeline: {pipeline}")
     if not _LOG_ID_PATTERN.match(log_id):
@@ -88,4 +108,7 @@ async def get_log(pipeline: str, log_id: str) -> LogDetail:
     except (OSError, json.JSONDecodeError) as error:
         raise HTTPException(status_code=500, detail="Log file is unreadable") from error
 
+    if not _can_view(user, pipeline, record):
+        # 404, not 403: don't confirm another user's log exists.
+        raise HTTPException(status_code=404, detail="Log not found")
     return LogDetail(id=log_id, pipeline=pipeline, record=record)

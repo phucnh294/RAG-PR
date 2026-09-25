@@ -29,7 +29,7 @@ async def test_run_indexing_marks_document_ready_and_stores_chunks() -> None:
 
     await run_indexing(record.id, record.filename, record.mime_type)
 
-    updated = await dummy_store.get_document(record.id)
+    updated = await dummy_store.get_document_unscoped(record.id)
     assert updated is not None
     assert updated.status == "ready"
     assert len(updated.excerpts) > 0
@@ -49,7 +49,7 @@ async def test_run_indexing_marks_document_failed_for_unsupported_pdf() -> None:
 
     await run_indexing(record.id, record.filename, record.mime_type)
 
-    updated = await dummy_store.get_document(record.id)
+    updated = await dummy_store.get_document_unscoped(record.id)
     assert updated is not None
     assert updated.status == "failed"
     assert updated.error_message is not None
@@ -74,7 +74,7 @@ async def test_run_indexing_marks_document_failed_when_embedding_model_times_out
 
     await run_indexing(record.id, record.filename, record.mime_type)
 
-    updated = await dummy_store.get_document(record.id)
+    updated = await dummy_store.get_document_unscoped(record.id)
     assert updated is not None
     assert updated.status == "failed"
     assert updated.error_message is not None
@@ -148,3 +148,41 @@ async def test_run_indexing_logs_every_step_input_and_output_to_console(
     assert _has("1_load_input", "output")
     assert _has("8_store_chunks", "input")
     assert _has("8_store_chunks", "output")
+
+
+async def test_run_indexing_chunks_qanda_markdown_and_logs_ownership() -> None:
+    content = (
+        "---\ntitle: Leave FAQ\ndate: 2026-09-25\ntype: qanda\narea: hr\ntags: [leave]\n---\n"
+        "## TL;DR\n- **What:** leave rules.\n\n"
+        "## Q1: How many days?\nTwenty.\n\n## Q2: Notice period?\nFive business days.\n"
+    )
+    record = await dummy_store.add_document(
+        filename="leave.md",
+        content_hash="h7",
+        mime_type="text/markdown",
+        size_bytes=len(content),
+        classification="internal",
+        created_by="creator-1",
+        tags=["upload-tag"],
+    )
+    doc_dir = settings.input_dir / record.id
+    doc_dir.mkdir(parents=True)
+    (doc_dir / record.filename).write_text(content, encoding="utf-8")
+
+    await run_indexing(record.id, record.filename, record.mime_type)
+
+    chunks = await dummy_store.get_chunks(record.id)
+    assert [chunk.metadata.get("question_id") for chunk in chunks] == [None, "Q1", "Q2"]
+    assert {chunk.metadata["chunk_strategy"] for chunk in chunks} == {"qanda"}
+    updated = await dummy_store.get_document_unscoped(record.id)
+    assert updated is not None
+    assert updated.tags == ["upload-tag", "leave"]
+    assert dummy_store._document_extras[record.id]["area"] == "hr"
+
+    log_path = next((settings.pipeline_log_dir / "indexing").glob(f"*_{record.id}.json"))
+    log = json.loads(log_path.read_text(encoding="utf-8"))
+    assert log["created_by"] == "creator-1"
+    assert log["classification"] == "internal"
+    assert log["chunk_strategy"] == "qanda"
+    assert log["frontmatter"]["type"] == "qanda"
+    assert log["steps"]["3_chunking_strategy"]["output"]["chunks_per_strategy"] == {"qanda": 3}

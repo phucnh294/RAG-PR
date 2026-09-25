@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from rag_backend.config import settings
 from rag_backend.db import postgres_store
 from rag_backend.guardrails.schemas import EvidenceSummary
+from rag_backend.rag_pipeline.retrieval.state import RetrievalState
 from rag_backend.rag_pipeline.retrieval.step4_similarity_search import ScoredChunk
 from rag_backend.schemas.chat import Citation
 
@@ -16,7 +18,9 @@ class CombinedContext:
     evidence: EvidenceSummary
 
 
-async def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
+async def combine_context(
+    scored_chunks: list[ScoredChunk], state: RetrievalState
+) -> CombinedContext:
     """Drop chunks below the minimum similarity threshold, then merge the survivors
     into citations plus a single numbered context block for prompt building.
 
@@ -33,7 +37,7 @@ async def combine_context(scored_chunks: list[ScoredChunk]) -> CombinedContext:
     citations: list[Citation] = []
     context_lines: list[str] = []
     for index, item in enumerate(surviving, start=1):
-        document = await postgres_store.get_document(item.chunk.document_id)
+        document = await postgres_store.get_document(item.chunk.document_id, state.user.id)
         filename = document.filename if document is not None else "unknown"
         citations.append(
             Citation(
@@ -70,6 +74,7 @@ def _assess_evidence(surviving: list[ScoredChunk]) -> EvidenceSummary:
     top_score = max(scores)
     mean_score = sum(scores) / len(scores)
 
+    level: Literal["high", "medium", "low"]
     if top_score >= settings.guardrail_evidence_high_threshold:
         level = "high"
     elif top_score >= settings.guardrail_evidence_medium_threshold:

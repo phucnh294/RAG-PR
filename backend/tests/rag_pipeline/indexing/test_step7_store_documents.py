@@ -14,7 +14,7 @@ async def test_store_document_marks_ready_with_excerpts() -> None:
 
     await store_document(record.id, excerpts=["hello world"])
 
-    updated = await dummy_store.get_document(record.id)
+    updated = await dummy_store.get_document_unscoped(record.id)
     assert updated is not None
     assert updated.status == "ready"
     assert updated.excerpts == ["hello world"]

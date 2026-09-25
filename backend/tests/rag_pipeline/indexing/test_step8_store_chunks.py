@@ -27,4 +27,4 @@ async def test_store_chunks_persists_records_retrievable_by_document_id() -> Non
     assert len(stored) == 1
     assert stored[0].content == "hello"
     assert stored[0].embedding == [0.1, 0.2, 0.3]
-    assert stored[0].metadata == {"word_count": 1, "char_count": 5}
+    assert stored[0].metadata == {"word_count": 1, "char_count": 5, "chunk_strategy": "window"}
