@@ -354,6 +354,98 @@ body {
   color: #b91c1c;
 }
 
+.evals-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.evals-toolbar button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.evals-toolbar button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.eval-generated-at {
+  color: #777;
+  font-size: 0.85rem;
+  margin-top: -0.5rem;
+}
+
+.eval-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.eval-metric-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  background: white;
+}
+
+.eval-metric-card h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.eval-metric-count {
+  color: #777;
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.eval-metric-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+}
+
+.eval-metric-list dt {
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.eval-metric-list dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.eval-metric-ok {
+  color: #166534;
+}
+
+.eval-metric-warn {
+  color: #b91c1c;
+}
+
+.eval-results {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.eval-results th,
+.eval-results td {
+  text-align: left;
+  padding: 0.4rem;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+
 @media (max-width: 768px) {
   .sidebar-backdrop {
     display: block;

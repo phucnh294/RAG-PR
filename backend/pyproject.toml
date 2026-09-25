@@ -41,3 +41,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# golden_set.json is read at runtime via Path(__file__).parent (see eval/golden_set.py)
+# — setuptools excludes non-.py files from an installed package by default, so this
+# needs to be declared explicitly or `pip install .` (see backend/Dockerfile) silently
+# drops the file and eval/golden_set.py raises FileNotFoundError at request time.
+rag_backend = ["eval/*.json"]

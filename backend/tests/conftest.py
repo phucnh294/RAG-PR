@@ -11,8 +11,26 @@ from rag_backend.db import postgres_store
 from rag_backend.db import session as db_session
 from rag_backend.embedding_model import client as embedding_model_client
 from rag_backend.embedding_model import fake_client as fake_embedding_client
+from rag_backend.guardrails import judge_client
+from rag_backend.llm_model.client import LlmClient
 from rag_backend.main import create_app
 from rag_backend.storage import dummy_store
+
+
+class FakeGuardrailJudgeClient(LlmClient):
+    """Default guardrail judge double: always reports "safe" without any network call.
+
+    Individual tests override this per-test by monkeypatching
+    rag_backend.guardrails.judge_client.guardrail_judge_client again, or by
+    subclassing with a different complete_chat to exercise unsafe/judge_error paths.
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    async def complete_chat(self, messages: list[dict[str, str]]) -> str:
+        return '{"verdict": "safe", "category": null, "reason": "fake judge: always safe"}'
+
 
 _STORE_FUNCTIONS = (
     "list_documents",
@@ -64,6 +82,16 @@ def _fake_embedding_client(monkeypatch: pytest.MonkeyPatch) -> None:
 def _isolated_pipeline_log_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep per-request pipeline log files out of the real backend/pipeline-logs/."""
     monkeypatch.setattr(settings, "pipeline_log_dir", tmp_path / "pipeline-logs")
+
+
+@pytest.fixture(autouse=True)
+def _fake_guardrail_judge_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route rag_backend.guardrails.judge_client.guardrail_judge_client to a fake that
+    always reports "safe" with no network call — otherwise every test exercising the
+    retrieval pipeline would try to reach a nonexistent judge LLM, since guardrails are
+    enabled by default. Guardrail-specific tests override this per-test.
+    """
+    monkeypatch.setattr(judge_client, "guardrail_judge_client", FakeGuardrailJudgeClient())
 
 
 @pytest.fixture

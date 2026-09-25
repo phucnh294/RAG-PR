@@ -30,11 +30,16 @@ export default function ChatWindow() {
             return updated;
           });
         },
-        (citations) => {
+        (payload) => {
           setMessages((prev) => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
-            updated[updated.length - 1] = { ...last, citations };
+            updated[updated.length - 1] = {
+              ...last,
+              citations: payload.citations,
+              guardrails: payload.guardrails,
+              evidence: payload.evidence,
+            };
             return updated;
           });
         },

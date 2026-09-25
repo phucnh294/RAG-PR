@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from rag_backend.api import routes_chat, routes_health, routes_logs, routes_upload
+from rag_backend.api import routes_chat, routes_eval, routes_health, routes_logs, routes_upload
 from rag_backend.config import settings
 from rag_backend.db import postgres_store
 from rag_backend.db.session import close_pool, init_pool
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_upload.router)
     app.include_router(routes_chat.router)
     app.include_router(routes_logs.router)
+    app.include_router(routes_eval.router)
     return app
 
 

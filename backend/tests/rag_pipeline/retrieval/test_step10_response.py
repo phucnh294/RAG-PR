@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import json
 
+from rag_backend.guardrails.schemas import EvidenceSummary, GuardrailVerdict
 from rag_backend.rag_pipeline.retrieval.step10_response import (
     CITATIONS_MARKER,
     build_citations_payload,
 )
 from rag_backend.schemas.chat import Citation
+
+_EVIDENCE = EvidenceSummary(
+    level="none", top_score=None, mean_score=None, surviving_chunk_count=0, threshold=0.7
+)
+_SAFE_VERDICT = GuardrailVerdict(layer="input", verdict="safe", reason="ok")
 
 
 def test_build_citations_payload_encodes_marker_and_json() -> None:
@@ -14,15 +20,19 @@ def test_build_citations_payload_encodes_marker_and_json() -> None:
         Citation(document_id="doc-1", filename="f.md", excerpt="hello", similarity_score=0.9)
     ]
 
-    payload = build_citations_payload(citations)
+    payload = build_citations_payload(citations, [_SAFE_VERDICT], _EVIDENCE)
 
     text = payload.decode("utf-8")
     assert text.startswith(CITATIONS_MARKER)
     decoded = json.loads(text[len(CITATIONS_MARKER) :])
-    assert decoded[0]["filename"] == "f.md"
+    assert decoded["citations"][0]["filename"] == "f.md"
+    assert decoded["guardrails"][0]["verdict"] == "safe"
+    assert decoded["evidence"]["level"] == "none"
 
 
 def test_build_citations_payload_handles_empty_list() -> None:
-    payload = build_citations_payload([])
+    payload = build_citations_payload([], [], _EVIDENCE)
 
-    assert payload.decode("utf-8") == f"{CITATIONS_MARKER}[]"
+    decoded = json.loads(payload.decode("utf-8")[len(CITATIONS_MARKER) :])
+    assert decoded["citations"] == []
+    assert decoded["guardrails"] == []

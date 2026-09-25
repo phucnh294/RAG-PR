@@ -23,11 +23,13 @@ class LlmClient:
         model_name: str | None = None,
         provider: str | None = None,
         google_api_key: str | None = None,
+        request_timeout_seconds: float | None = None,
     ) -> None:
         self._base_url = base_url or settings.llm_base_url
         self._model_name = model_name or settings.llm_model_name
         self._provider = provider or settings.llm_provider
         self._google_api_key = google_api_key or settings.google_api_key
+        self._timeout_seconds = request_timeout_seconds or settings.llm_request_timeout_seconds
 
     async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """Yield response content chunks as they arrive from the configured LLM provider."""
@@ -38,10 +40,18 @@ class LlmClient:
             async for content in self._stream_chat_ollama(messages):
                 yield content
 
+    async def complete_chat(self, messages: list[dict[str, str]]) -> str:
+        """Collect stream_chat into a single string for non-streaming callers (e.g. guardrail judges)."""
+        try:
+            chunks = [content async for content in self.stream_chat(messages)]
+        except httpx.HTTPError as error:
+            raise LlmClientError(f"LLM provider request failed: {error}") from error
+        return "".join(chunks)
+
     async def _stream_chat_ollama(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """Yield response content chunks from Ollama's streaming /api/chat endpoint."""
         payload = {"model": self._model_name, "messages": messages, "stream": True}
-        timeout = httpx.Timeout(settings.llm_request_timeout_seconds)
+        timeout = httpx.Timeout(self._timeout_seconds)
         async with (
             httpx.AsyncClient(timeout=timeout) as http_client,
             http_client.stream("POST", f"{self._base_url}/api/chat", json=payload) as response,
@@ -60,9 +70,7 @@ class LlmClient:
     async def _stream_chat_google(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """Yield response content chunks from Gemini's streaming generateContent endpoint."""
         if not self._google_api_key:
-            raise LlmClientError(
-                "GOOGLE_API_KEY is not set; required when LLM_PROVIDER=google."
-            )
+            raise LlmClientError("GOOGLE_API_KEY is not set; required when LLM_PROVIDER=google.")
 
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"

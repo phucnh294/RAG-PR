@@ -1,10 +1,12 @@
-import type { Citation } from "../api/streaming";
+import type { Citation, EvidenceSummary, GuardrailVerdict } from "../api/streaming";
 import CitationList from "./CitationList";
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   citations?: Citation[];
+  guardrails?: GuardrailVerdict[];
+  evidence?: EvidenceSummary;
 }
 
 interface MessageBubbleProps {

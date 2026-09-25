@@ -20,3 +20,12 @@ class DocumentParsingError(RagBackendError):
 
 class PdfParsingNotImplementedError(DocumentParsingError):
     """Raised for PDF uploads until real PDF text extraction is implemented."""
+
+
+class GuardrailJudgeError(RagBackendError):
+    """Raised when the guardrail judge LLM is unreachable or times out.
+
+    Always caught inside rag_backend.guardrails.judge_client.judge() and converted to
+    a fail-closed GuardrailVerdict — never propagates to a route handler or produces
+    an HTTP error response.
+    """
