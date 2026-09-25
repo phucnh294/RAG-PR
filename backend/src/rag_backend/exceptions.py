@@ -22,6 +22,14 @@ class PdfParsingNotImplementedError(DocumentParsingError):
     """Raised for PDF uploads until real PDF text extraction is implemented."""
 
 
+class EmbeddingModelError(RagBackendError):
+    """Raised when the embedding-model container is unreachable, times out, or errors.
+
+    A RagBackendError so run_indexing marks the document "failed" with this message
+    instead of leaving it stuck in "pending" with no chunks.
+    """
+
+
 class GuardrailJudgeError(RagBackendError):
     """Raised when the guardrail judge LLM is unreachable or times out.
 
