@@ -12,4 +12,7 @@ router = APIRouter(tags=["chat"])
 
 @router.post("/chat")
 async def chat(request: ChatRequest, user: CurrentUserDep) -> StreamingResponse:
-    return StreamingResponse(run_retrieval(request.message, user), media_type="text/plain")
+    return StreamingResponse(
+        run_retrieval(request.message, user, rerank_enabled=request.rerank),
+        media_type="text/plain",
+    )

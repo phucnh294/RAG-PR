@@ -40,4 +40,13 @@ Both rule files note they are duplicated in a `must-read.md` — if you edit a r
 
 ## Commands
 
-No build, lint, test, or run commands exist yet — there is no `package.json`, `pyproject.toml`, `requirements.txt`, or `Dockerfile` in the repo. Once these are added (for the React frontend, Python backend, and/or Docker services), add a Commands section here documenting the actual build/lint/test/dev commands — don't guess at them in the meantime.
+Backend (from `backend/`, using its `.venv`):
+
+- Tests: `.venv/Scripts/python -m pytest` (Windows) / `.venv/bin/python -m pytest`
+- Lint / format / types: `python -m ruff check .`, `python -m black --check .`, `python -m mypy src`
+- Dev server: `uvicorn rag_backend.main:app --reload`
+
+Frontend (from `frontend/`): `npm run dev`, `npm run build` (runs `tsc -b` + `vite build`).
+
+Full stack: `docker compose up -d --build` from the repo root (postgres, llm-model,
+embedding-model, reranker-model, backend, frontend). See README.md for ports and env vars.

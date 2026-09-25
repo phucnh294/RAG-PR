@@ -27,6 +27,11 @@ async def combine_context(
     Chunks the full-text search matched are kept regardless of cosine score: exact
     identifiers (error codes, config keys, names) are what embeddings rank worst and
     keywords rank best, so filtering them on cosine would undo hybrid search.
+
+    The threshold deliberately stays on cosine even when step 6 reranked: the rerank
+    score decides the ORDER, not whether a chunk is relevant enough to show, so a chunk
+    the cross-encoder promoted can still be dropped here if its cosine is low and it
+    had no keyword match.
     """
     surviving = [
         item
@@ -45,6 +50,7 @@ async def combine_context(
                 filename=filename,
                 excerpt=item.chunk.content,
                 similarity_score=item.similarity_score,
+                rerank_score=item.rerank_score,
             )
         )
         context_lines.append(f"[{index}] ({filename}) {item.chunk.content}")

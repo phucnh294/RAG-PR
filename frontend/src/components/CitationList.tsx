@@ -14,7 +14,13 @@ export default function CitationList({ citations }: CitationListProps) {
         {citations.map((citation, index) => (
           <li key={`${citation.document_id}-${index}`}>
             <strong>{citation.filename}</strong>{" "}
-            <span className="score">({Math.round(citation.similarity_score * 100)}%)</span>
+            <span className="score">
+              ({Math.round(citation.similarity_score * 100)}% similarity
+              {citation.rerank_score !== null && citation.rerank_score !== undefined
+                ? `, rerank ${citation.rerank_score.toFixed(3)}`
+                : ""}
+              )
+            </span>
             <p>{citation.excerpt}</p>
           </li>
         ))}

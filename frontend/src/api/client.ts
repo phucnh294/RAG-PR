@@ -178,4 +178,49 @@ export async function runGuardrailEval(): Promise<EvalReport> {
   return response.json();
 }
 
+export interface RankingMetrics {
+  query_count: number;
+  recall_at_1: number;
+  recall_at_k: number;
+  mrr: number;
+  ndcg_at_k: number;
+}
+
+export interface RerankQueryResult {
+  query: string;
+  expected_document_filename: string;
+  expected_excerpt: string | null;
+  rank_in_pool: number | null;
+  rank_before: number | null;
+  rank_after: number | null;
+  candidate_count: number;
+  rerank_status: string;
+  rerank_duration_ms: number | null;
+}
+
+export interface RerankComparisonReport {
+  generated_at: string;
+  model: string;
+  search_mode: string;
+  k: number;
+  candidate_k: number;
+  baseline: RankingMetrics;
+  reranked: RankingMetrics;
+  delta: RankingMetrics;
+  pool_recall: number;
+  improved_count: number;
+  worsened_count: number;
+  unchanged_count: number;
+  rerank_failed_count: number;
+  mean_rerank_ms: number | null;
+  p95_rerank_ms: number | null;
+  skipped_queries: string[];
+  results: RerankQueryResult[];
+}
+
+export async function runRerankComparison(): Promise<RerankComparisonReport> {
+  const response = await apiFetch(`${API_BASE}/eval/rerank-comparison`, { method: "POST" });
+  return response.json();
+}
+
 export { API_BASE };

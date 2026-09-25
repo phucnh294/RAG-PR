@@ -3,7 +3,7 @@ title: RBAC Authorization Implemented — Uncommitted on feature/rbac-authorizat
 date: 2026-09-25
 type: session-handoff
 area: authorization
-status: in-progress
+status: superseded
 session_id: e4ce8334-7603-4da1-bb94-f1b2180e6010
 tags: [authorization, rbac, pgvector, hybrid-search, chunking, logging, backend, frontend, docker]
 keywords: [feature/rbac-authorization, feature/rag-guardrails, X-User-Id, v_user_accessible_chunks, authz_seeded_grants, rag_documents_dedup_key, RetrievalState, AUTH_DEV_MODE, ADMIN_USERNAME, get_document_unscoped]

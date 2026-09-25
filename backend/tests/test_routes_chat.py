@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rag_backend.guardrails import judge_client
-from rag_backend.llm_model.client import LlmClient
+from rag_backend.llm_model.client import LlmClient, LlmClientError
 
 
 class FakeLlmClient(LlmClient):
@@ -79,3 +79,45 @@ def test_chat_returns_200_even_when_the_guardrail_judge_flags_the_input(
     payload = json.loads(citations_part)
     assert payload["guardrails"][0]["verdict"] == "unsafe"
     assert answer_part != "should not be seen"
+
+
+def test_chat_rerank_flag_reorders_with_the_cross_encoder_and_reports_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("rag_backend.llm_model.client.llm_client", FakeLlmClient(tokens=["ok"]))
+    question = "All employees are entitled to 20 days of paid annual leave per calendar year."
+
+    reranked = client.post("/chat", json={"message": question, "rerank": True})
+    plain = client.post("/chat", json={"message": question, "rerank": False})
+
+    reranked_payload = json.loads(reranked.text.partition("\x00CITATIONS:")[2])
+    plain_payload = json.loads(plain.text.partition("\x00CITATIONS:")[2])
+    assert reranked_payload["retrieval"]["rerank_status"] == "applied"
+    assert reranked_payload["citations"][0]["rerank_score"] is not None
+    assert plain_payload["retrieval"]["rerank_status"] == "disabled"
+    assert plain_payload["citations"][0]["rerank_score"] is None
+
+
+class FailingLlmClient(LlmClient):
+    def __init__(self) -> None:
+        pass
+
+    async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+        raise LlmClientError("google request failed: HTTP 503 Service Unavailable")
+        yield ""  # pragma: no cover - makes this an async generator
+
+
+def test_chat_answers_with_the_reason_when_the_answer_llm_fails(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("rag_backend.llm_model.client.llm_client", FailingLlmClient())
+    question = "All employees are entitled to 20 days of paid annual leave per calendar year."
+
+    response = client.post("/chat", json={"message": question})
+
+    assert response.status_code == 200
+    answer, _, payload_json = response.text.partition("\x00CITATIONS:")
+    assert "unavailable" in answer
+    assert "HTTP 503" in answer
+    payload = json.loads(payload_json)
+    assert "employee_handbook.md" in json.dumps(payload["citations"])

@@ -29,6 +29,9 @@ RAG/
 ├── embedding-model/             # Ollama container dedicated to embeddings (nomic-embed-text)
 │   ├── Dockerfile
 │   └── entrypoint.sh
+├── reranker-model/              # cross-encoder reranker (ms-marco-MiniLM-L6-v2, ONNX Runtime)
+│   ├── Dockerfile              # python:3.12-slim + model baked in at a pinned revision
+│   └── server.py               # TEI-compatible POST /rerank + GET /health on :8080
 ├── backend/                    # FastAPI application
 │   ├── Dockerfile
 │   ├── pyproject.toml
@@ -42,6 +45,8 @@ RAG/
 │   │   ├── llm_model/          # client for the llm-model container
 │   │   ├── embedding_model/    # client for the embedding-model container (+ fake_client.py
 │   │   │                       # — the old hash-based stub, now used only by the test suite)
+│   │   ├── reranker_model/     # client for the reranker-model container (+ test fake)
+│   │   ├── eval/               # golden set, guardrail eval, rerank before/after comparison
 │   │   ├── db/                 # session.py (asyncpg pool) + postgres_store.py (real store)
 │   │   ├── schemas/            # pydantic request/response models
 │   │   └── storage/            # records.py (shared dataclasses) + dummy_store.py
@@ -69,7 +74,7 @@ Coding conventions and where new documentation belongs are defined in [`CLAUDE.m
 
 ## Running with Docker (recommended)
 
-Brings up five containers: `postgres` (pgvector-enabled Postgres), `llm-model` (Ollama, chat), `embedding-model` (Ollama, `nomic-embed-text`), `backend` (FastAPI), `frontend` (nginx-served React build).
+Brings up six containers: `postgres` (pgvector-enabled Postgres), `llm-model` (Ollama, chat), `embedding-model` (Ollama, `nomic-embed-text`), `reranker-model` (cross-encoder `ms-marco-MiniLM-L6-v2` on ONNX Runtime), `backend` (FastAPI), `frontend` (nginx-served React build).
 
 First, create your local env file (gitignored — never commit it):
 
@@ -112,6 +117,18 @@ curl http://localhost:8000/logs                       # list recent runs (add ?p
 curl http://localhost:8000/logs/retrieval/<log-id>     # full record for one run
 ```
 
+### Reranking
+
+Step 6 of retrieval can reorder the hybrid-search candidates with a cross-encoder. Switch it per message with the **Rerank results with cross-encoder** checkbox in the chat (or `"rerank": true` in the `POST /chat` body). With it on, hybrid search returns `RERANK_CANDIDATE_K` candidates, the cross-encoder scores each (question, chunk) pair, and the best `RETRIEVAL_TOP_K` go on to the prompt. If `reranker-model` is down, chat still answers in hybrid order and shows "Rerank failed".
+
+To measure whether reranking helps, run **Evals → Rerank Comparison** (admin), or call it directly:
+
+```bash
+curl -X POST -H "X-User-Id: <admin-user-id>" http://localhost:8000/eval/rerank-comparison
+```
+
+It ranks the same candidate pool twice for every answerable golden-set query, in hybrid order and in cross-encoder order, and reports Recall@1, Recall@k, MRR and nDCG@k for each, plus the difference and the rerank latency. It makes no LLM calls. Golden-set entries with an `expected_excerpt` are scored at chunk level. Entries whose document isn't indexed are listed as skipped.
+
 ### Configuration
 
 Environment variables (set in `docker-compose.yml` or an `.env` file) control the backend:
@@ -122,6 +139,11 @@ Environment variables (set in `docker-compose.yml` or an `.env` file) control th
 | `LLM_MODEL_NAME` | `qwen2.5:0.5b-instruct` | Model pulled by `llm-model` and used for chat |
 | `EMBEDDING_BASE_URL` | `http://embedding-model:11434` | Where the backend reaches the Ollama embedding container |
 | `EMBEDDING_MODEL_NAME` | `nomic-embed-text` | Model pulled by `embedding-model`; also stored as `rag_embeddings.model` |
+| `RERANKER_BASE_URL` | `http://reranker-model:8080` | Where the backend reaches the cross-encoder container |
+| `RERANKER_MODEL_NAME` | `cross-encoder/ms-marco-MiniLM-L6-v2` | Label shown in the comparison report (the model itself is baked into the image) |
+| `RERANKER_THREADS` | `6` | ONNX Runtime threads in `reranker-model` (about your physical core count) |
+| `RERANK_ENABLED_DEFAULT` | `false` | Rerank when a `/chat` request doesn't say (the UI always sends its toggle) |
+| `RERANK_CANDIDATE_K` | `10` | Hybrid candidates handed to the cross-encoder before the final `RETRIEVAL_TOP_K` cut; latency grows linearly with it |
 | `MAX_UPLOAD_SIZE_MB` | `25` | Upload size limit |
 | `ALLOWED_MIME_TYPES` | pdf, txt, md | Accepted upload types |
 

@@ -25,6 +25,120 @@
     "expected_document_filename": "onboarding_guide.txt"
   },
   {
+    "query": "How soon do I have to report a lost or stolen company laptop?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "reported to IT Security within one hour of discovery"
+  },
+  {
+    "query": "What are the core collaboration hours remote employees must be reachable?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "from 10:00 a.m. to 3:00 p.m."
+  },
+  {
+    "query": "How many days a week can I work from home?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "work remotely up to three days per week"
+  },
+  {
+    "query": "What is the deadline for submitting expenses to get reimbursed?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "documented, and submitted within thirty days"
+  },
+  {
+    "query": "Can I fly business class on a work trip?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "booked in economy class"
+  },
+  {
+    "query": "How quickly must a critical client production issue be logged?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "logged within fifteen minutes of discovery"
+  },
+  {
+    "query": "When should decisions made verbally in a client meeting be written up?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "summarized in writing within one business day"
+  },
+  {
+    "query": "How often must policy owners review their policies?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "at least every six months"
+  },
+  {
+    "query": "Should a spreadsheet with client names, invoice values and bank details be classified as Restricted?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "should be treated as Restricted"
+  },
+  {
+    "query": "I clicked a suspicious link in an email, what should I do?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "disconnect from sensitive systems"
+  },
+  {
+    "query": "How far ahead should planned time off be requested at VB Company?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "at least ten business days in advance"
+  },
+  {
+    "query": "How much notice does a manager need to give when submitting an offboarding request?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "five business days before the planned end date"
+  },
+  {
+    "query": "Who coordinates the Knowledge Base review calendar?",
+    "category": "real",
+    "expected_document_filename": "vb-company-policy-rag-test.md",
+    "expected_excerpt": "Director of Business Operations"
+  },
+  {
+    "query": "How many paid company holidays do employees receive each year?",
+    "category": "real",
+    "expected_document_filename": "03_holiday_pay_policy.md",
+    "expected_excerpt": "10 paid company holidays"
+  },
+  {
+    "query": "What is the annual PTO allowance for a full-time employee?",
+    "category": "real",
+    "expected_document_filename": "employee_handbook.md",
+    "expected_excerpt": "20 days of paid annual leave"
+  },
+  {
+    "query": "Which portal are vacation requests submitted through?",
+    "category": "real",
+    "expected_document_filename": "user_document.md",
+    "expected_excerpt": "Orbit Portal"
+  },
+  {
+    "query": "After how long must an unresolved Priority 2 incident be escalated, and to whom?",
+    "category": "real",
+    "expected_document_filename": "staff_document.md",
+    "expected_excerpt": "45 minutes"
+  },
+  {
+    "query": "Which console do administrators use to recover from an authentication outage?",
+    "category": "real",
+    "expected_document_filename": "admin_document.md",
+    "expected_excerpt": "Aegis Console"
+  },
+  {
+    "query": "What is the approved Q4 engineering modernization budget?",
+    "category": "real",
+    "expected_document_filename": "manager_document.md",
+    "expected_excerpt": "$1,275,000"
+  },
+  {
     "query": "What's the weather like in Paris right now?",
     "category": "expect"
   },

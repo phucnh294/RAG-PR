@@ -107,13 +107,23 @@ export default function App() {
           )}
         </div>
         {identityError && <p className="error">{identityError}</p>}
-        {/* Keyed by user, so switching identity remounts the page and refetches as them. */}
+        {/* Every page stays mounted and inactive ones are only hidden, so switching tabs
+            keeps each page's state (chat history, filters, eval reports, an answer still
+            streaming). Keyed by user: switching identity remounts them as that user. */}
         {userId && (
           <Fragment key={userId}>
-            {tab === "chat" && <ChatPage />}
-            {tab === "documents" && <DocumentsPage />}
-            {tab === "logs" && <LogsPage />}
-            {tab === "evals" && <EvalsPage />}
+            <div hidden={tab !== "chat"}>
+              <ChatPage userId={userId} />
+            </div>
+            <div hidden={tab !== "documents"}>
+              <DocumentsPage active={tab === "documents"} />
+            </div>
+            <div hidden={tab !== "logs"}>
+              <LogsPage active={tab === "logs"} />
+            </div>
+            <div hidden={tab !== "evals"}>
+              <EvalsPage />
+            </div>
           </Fragment>
         )}
       </main>

@@ -144,3 +144,19 @@ def test_reciprocal_rank_fusion_respects_top_k() -> None:
     results = reciprocal_rank_fusion(vector_hits, [], top_k=2, rrf_k=60)
 
     assert [item.chunk.id for item in results] == ["0", "1"]
+
+
+async def test_similarity_search_widens_to_rerank_candidate_k_when_rerank_is_enabled(
+    admin_state: RetrievalState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "retrieval_top_k", 2)
+    monkeypatch.setattr(settings, "rerank_candidate_k", 4)
+    for index in range(6):
+        await _add_chunk(f"doc-{index}", embedding=[1.0, float(index), 0.0])
+    query = EmbeddedQuery(text="q", embedding=[1.0, 0.0, 0.0])
+
+    admin_state.rerank_enabled = False
+    assert len(await similarity_search(query, admin_state)) == 2
+
+    admin_state.rerank_enabled = True
+    assert len(await similarity_search(query, admin_state)) == 4

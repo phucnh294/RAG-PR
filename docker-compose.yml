@@ -49,6 +49,24 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  reranker-model:
+    # Cross-encoder ms-marco-MiniLM-L6-v2 (ONNX Runtime, CPU), model baked into the image
+    # at a pinned revision — see reranker-model/Dockerfile. Internal only, like
+    # embedding-model: the backend reaches it at http://reranker-model:8080.
+    build: ./reranker-model
+    environment:
+      # ONNX Runtime threads: ~physical cores. Measured on the dev box (12 logical CPUs
+      # in Docker): 6 threads = 2.2 s per 20 chunks, 12 threads = 3.7 s (hyperthreads
+      # contend), 1 thread = 7 s. Tune via RERANKER_THREADS in .env for other machines.
+      ORT_INTRA_OP_THREADS: ${RERANKER_THREADS:-6}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
   backend:
     build: ./backend
     ports:
@@ -61,6 +79,7 @@ services:
       # fixed by this compose file's own service names/ports, not something .env controls.
       LLM_BASE_URL: http://llm-model:11434
       EMBEDDING_BASE_URL: http://embedding-model:11434
+      RERANKER_BASE_URL: http://reranker-model:8080
       # postgres container's own port (always 5432), not the 5433 host-mapped port
       # used by external tools like DBeaver.
       POSTGRES_HOST: postgres
@@ -73,6 +92,10 @@ services:
         condition: service_healthy
       embedding-model:
         condition: service_healthy
+      # Started, not healthy: chat falls back to the hybrid order while the reranker is
+      # still downloading its model (or down), so it must not block the backend.
+      reranker-model:
+        condition: service_started
       postgres:
         condition: service_healthy
     healthcheck:
