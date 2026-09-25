@@ -3,7 +3,7 @@ title: Hybrid Search + Embedding Batch Fix Merged — Not Yet in Master
 date: 2026-09-25
 type: session-handoff
 area: rag-retrieval
-status: in-progress
+status: superseded
 session_id: 0009fab7-f0b1-4cc3-adbc-6c9b3b61b145
 tags: [hybrid-search, full-text-search, rrf, embedding, indexing, timeout, pull-request, git, backend, docker]
 keywords: [feature/rag-guardrails, a96b610, PR #10, PR #11, PR #12, EmbeddingModelError, EMBEDDING_BATCH_SIZE, EMBEDDING_REQUEST_TIMEOUT_SECONDS, httpx.ReadTimeout, content_tsv, ensure_fulltext_index, matched_fulltext, --force-recreate]

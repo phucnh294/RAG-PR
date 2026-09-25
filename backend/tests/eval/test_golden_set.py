@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
+from rag_backend.auth.models import CurrentUser
 from rag_backend.eval.runner import run_golden_set
 from rag_backend.eval.schemas import GoldenEntry
 from rag_backend.guardrails import judge_client
@@ -22,8 +23,10 @@ def _real_ish_guardrail_doubles(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(llm_model_client, "llm_client", ContextAwareLlmClient())
 
 
-async def test_golden_set_never_false_blocks_legitimate_traffic() -> None:
-    report = await run_golden_set()
+async def test_golden_set_never_false_blocks_legitimate_traffic(
+    auth_users: dict[str, CurrentUser],
+) -> None:
+    report = await run_golden_set(auth_users["admin"])
 
     by_category = {metrics.category: metrics for metrics in report.categories}
 
@@ -31,8 +34,10 @@ async def test_golden_set_never_false_blocks_legitimate_traffic() -> None:
     assert by_category["expect"].false_block_rate == 0.0
 
 
-async def test_golden_set_catches_attacks_and_measures_retrieval_quality() -> None:
-    report = await run_golden_set()
+async def test_golden_set_catches_attacks_and_measures_retrieval_quality(
+    auth_users: dict[str, CurrentUser],
+) -> None:
+    report = await run_golden_set(auth_users["admin"])
     by_category = {metrics.category: metrics for metrics in report.categories}
 
     assert by_category["attack"].block_rate is not None
@@ -43,7 +48,7 @@ async def test_golden_set_catches_attacks_and_measures_retrieval_quality() -> No
 
 
 async def test_golden_set_skips_a_failing_entry_instead_of_crashing_the_whole_report(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, auth_users: dict[str, CurrentUser]
 ) -> None:
     """Mirrors the real incident this test guards against: a live Gemini eval run hit
     a 429 rate-limit mid-batch and the whole /eval/run request 500'd, losing every
@@ -67,7 +72,7 @@ async def test_golden_set_skips_a_failing_entry_instead_of_crashing_the_whole_re
         GoldenEntry(query="second real query", category="real", expected_document_filename=None),
     ]
 
-    report = await run_golden_set(entries=entries)
+    report = await run_golden_set(auth_users["admin"], entries=entries)
 
     assert len(report.results) == 1
     assert report.results[0].query == "second real query"

@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { fetchDemoUsers, type UserOut } from "./api/client";
+import { getSelectedUserId, setSelectedUserId } from "./auth/identity";
+import RoleSelector from "./components/RoleSelector";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import EvalsPage from "./pages/EvalsPage";
@@ -22,6 +25,28 @@ function isMobileViewport(): boolean {
 export default function App() {
   const [tab, setTab] = useState<Tab>("chat");
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobileViewport());
+  const [users, setUsers] = useState<UserOut[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [identityError, setIdentityError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchDemoUsers()
+      .then((loaded) => {
+        setUsers(loaded);
+        // Keep a remembered choice only if that user still exists; otherwise act as admin.
+        const remembered = loaded.find((user) => user.id === getSelectedUserId());
+        const initial = remembered ?? loaded.find((user) => user.role === "admin") ?? loaded[0];
+        if (initial) selectUser(initial.id);
+      })
+      .catch((err) =>
+        setIdentityError(err instanceof Error ? err.message : "Failed to load users"),
+      );
+  }, []);
+
+  function selectUser(id: string) {
+    setSelectedUserId(id);
+    setUserId(id);
+  }
 
   function selectTab(id: Tab) {
     setTab(id);
@@ -63,6 +88,7 @@ export default function App() {
           >
             {sidebarOpen ? "«" : "»"}
           </button>
+          <RoleSelector users={users} selectedUserId={userId} onSelect={selectUser} />
           {!sidebarOpen && (
             <>
               <span className="content-title">RAG Assistant</span>
@@ -80,10 +106,16 @@ export default function App() {
             </>
           )}
         </div>
-        {tab === "chat" && <ChatPage />}
-        {tab === "documents" && <DocumentsPage />}
-        {tab === "logs" && <LogsPage />}
-        {tab === "evals" && <EvalsPage />}
+        {identityError && <p className="error">{identityError}</p>}
+        {/* Keyed by user, so switching identity remounts the page and refetches as them. */}
+        {userId && (
+          <Fragment key={userId}>
+            {tab === "chat" && <ChatPage />}
+            {tab === "documents" && <DocumentsPage />}
+            {tab === "logs" && <LogsPage />}
+            {tab === "evals" && <EvalsPage />}
+          </Fragment>
+        )}
       </main>
     </div>
   );

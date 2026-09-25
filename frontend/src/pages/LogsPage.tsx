@@ -70,6 +70,7 @@ export default function LogsPage() {
             >
               <div className="log-entry-header">
                 <span className={`pipeline-badge ${log.pipeline}`}>{log.pipeline}</span>
+                {log.username && <span className="log-user">{log.username}</span>}
                 <span className="log-time">{log.created_at}</span>
               </div>
               <p className="log-summary">{log.summary || "(empty)"}</p>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from rag_backend.config import settings
+from rag_backend.rag_pipeline.retrieval.state import RetrievalState
 from rag_backend.rag_pipeline.retrieval.step3_embedding_question import EmbeddedQuery
 from rag_backend.rag_pipeline.retrieval.step4_similarity_search import (
     reciprocal_rank_fusion,
@@ -10,6 +11,19 @@ from rag_backend.rag_pipeline.retrieval.step4_similarity_search import (
 )
 from rag_backend.storage import dummy_store
 from rag_backend.storage.records import ChunkRecord
+from tests.rag_pipeline.retrieval.conftest import RegisterDocument
+
+
+@pytest.fixture(autouse=True)
+def _documents_exist(register_document: RegisterDocument, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every chunk added below belongs to a document the admin can read."""
+    original = dummy_store.add_chunks
+
+    async def _add_chunks_with_document(document_id: str, chunks: list[ChunkRecord]) -> None:
+        register_document(document_id)
+        await original(document_id, chunks)
+
+    monkeypatch.setattr(dummy_store, "add_chunks", _add_chunks_with_document)
 
 
 async def _add_chunk(document_id: str, embedding: list[float]) -> None:
@@ -28,13 +42,15 @@ async def _add_chunk(document_id: str, embedding: list[float]) -> None:
     )
 
 
-async def test_similarity_search_ranks_by_cosine_similarity_descending() -> None:
+async def test_similarity_search_ranks_by_cosine_similarity_descending(
+    admin_state: RetrievalState,
+) -> None:
     await _add_chunk("doc-exact", embedding=[1.0, 0.0, 0.0])
     await _add_chunk("doc-orthogonal", embedding=[0.0, 1.0, 0.0])
     await _add_chunk("doc-opposite", embedding=[-1.0, 0.0, 0.0])
 
     query = EmbeddedQuery(text="q", embedding=[1.0, 0.0, 0.0])
-    results = await similarity_search(query, top_k=3)
+    results = await similarity_search(query, admin_state, top_k=3)
 
     assert [item.chunk.document_id for item in results] == [
         "doc-exact",
@@ -45,13 +61,13 @@ async def test_similarity_search_ranks_by_cosine_similarity_descending() -> None
     assert results[2].similarity_score == -1.0
 
 
-async def test_similarity_search_respects_top_k() -> None:
+async def test_similarity_search_respects_top_k(admin_state: RetrievalState) -> None:
     await _add_chunk("doc-1", embedding=[1.0, 0.0])
     await _add_chunk("doc-2", embedding=[0.9, 0.1])
     await _add_chunk("doc-3", embedding=[0.1, 0.9])
 
     query = EmbeddedQuery(text="q", embedding=[1.0, 0.0])
-    results = await similarity_search(query, top_k=2)
+    results = await similarity_search(query, admin_state, top_k=2)
 
     assert len(results) == 2
 
@@ -72,13 +88,15 @@ async def _add_text_chunk(document_id: str, content: str, embedding: list[float]
     )
 
 
-async def test_similarity_search_hybrid_surfaces_keyword_only_match() -> None:
+async def test_similarity_search_hybrid_surfaces_keyword_only_match(
+    admin_state: RetrievalState,
+) -> None:
     for index in range(3):
         await _add_text_chunk(f"doc-semantic-{index}", "unrelated prose", [1.0, 0.0])
     await _add_text_chunk("doc-keyword", "raises ERR6002 on timeout", [0.0, 1.0])
 
     query = EmbeddedQuery(text="what is ERR6002", embedding=[1.0, 0.0])
-    results = await similarity_search(query, top_k=2)
+    results = await similarity_search(query, admin_state, top_k=2)
 
     assert results[0].chunk.document_id == "doc-keyword"
     assert results[0].text_rank == 1
@@ -88,14 +106,15 @@ async def test_similarity_search_hybrid_surfaces_keyword_only_match() -> None:
 
 
 async def test_similarity_search_vector_only_when_hybrid_disabled(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, admin_state: RetrievalState
 ) -> None:
     monkeypatch.setattr(settings, "hybrid_search_enabled", False)
+    admin_state.search_mode = "vector"
     await _add_text_chunk("doc-semantic", "unrelated prose", [1.0, 0.0])
     await _add_text_chunk("doc-keyword", "raises ERR6002 on timeout", [0.0, 1.0])
 
     query = EmbeddedQuery(text="what is ERR6002", embedding=[1.0, 0.0])
-    results = await similarity_search(query, top_k=2)
+    results = await similarity_search(query, admin_state, top_k=2)
 
     assert [item.chunk.document_id for item in results] == ["doc-semantic", "doc-keyword"]
     assert all(item.rrf_score is None for item in results)

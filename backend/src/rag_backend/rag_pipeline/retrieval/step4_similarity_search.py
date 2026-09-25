@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from rag_backend.config import settings
 from rag_backend.db import postgres_store
+from rag_backend.rag_pipeline.retrieval.state import RetrievalState
 from rag_backend.rag_pipeline.retrieval.step3_embedding_question import EmbeddedQuery
 from rag_backend.storage.records import ChunkRecord
 
@@ -29,23 +30,31 @@ class ScoredChunk:
         return self.text_rank is not None
 
 
-async def similarity_search(query: EmbeddedQuery, top_k: int | None = None) -> list[ScoredChunk]:
-    """Retrieve the top_k chunks for the question.
+async def similarity_search(
+    query: EmbeddedQuery, state: RetrievalState, top_k: int | None = None
+) -> list[ScoredChunk]:
+    """Retrieve the top_k chunks the requesting user is allowed to read.
 
     Hybrid mode (default) runs pgvector cosine search and Postgres full-text search,
     each returning up to hybrid_candidate_k candidates, and fuses them with Reciprocal
     Rank Fusion. Vector-only mode ranks by cosine similarity via pgvector's `<=>`.
+    Both searches are permission-filtered in SQL by state.user.id (through the
+    v_user_accessible_chunks view), before their LIMIT and before fusion.
     """
     limit = top_k if top_k is not None else settings.retrieval_top_k
-    if not settings.hybrid_search_enabled:
-        results = await postgres_store.search_similar_chunks(query.embedding, limit)
+    user_id = state.user.id
+    if state.search_mode != "hybrid":
+        results = await postgres_store.search_similar_chunks(query.embedding, limit, user_id)
+        state.vector_candidate_count = len(results)
         return [ScoredChunk(chunk=chunk, similarity_score=score) for chunk, score in results]
 
     candidate_k = max(settings.hybrid_candidate_k, limit)
-    vector_hits = await postgres_store.search_similar_chunks(query.embedding, candidate_k)
+    vector_hits = await postgres_store.search_similar_chunks(query.embedding, candidate_k, user_id)
     text_hits = await postgres_store.search_fulltext_chunks(
-        query.text, query.embedding, candidate_k
+        query.text, query.embedding, candidate_k, user_id
     )
+    state.vector_candidate_count = len(vector_hits)
+    state.text_candidate_count = len(text_hits)
     return reciprocal_rank_fusion(vector_hits, text_hits, limit, settings.rrf_k)
 
 

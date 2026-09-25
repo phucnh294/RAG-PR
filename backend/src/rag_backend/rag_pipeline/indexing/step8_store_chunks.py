@@ -15,10 +15,7 @@ async def store_chunks(document_id: str, embedded_chunks: list[EmbeddedChunk]) -
             chunk_index=embedded.chunk_with_metadata.chunk.chunk_index,
             content=embedded.chunk_with_metadata.chunk.content,
             embedding=embedded.embedding,
-            metadata={
-                "word_count": embedded.chunk_with_metadata.metadata.word_count,
-                "char_count": embedded.chunk_with_metadata.metadata.char_count,
-            },
+            metadata=embedded.chunk_with_metadata.metadata.to_dict(),
         )
         for embedded in embedded_chunks
     ]

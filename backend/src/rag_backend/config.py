@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Repo-root .env (backend/src/rag_backend/config.py -> backend -> repo root), resolved
@@ -114,6 +115,52 @@ class Settings(BaseSettings):
     guardrail_evidence_high_threshold: float = 0.85
     guardrail_evidence_medium_threshold: float = 0.75
     guardrail_refusal_message: str = "I can't help with that request."
+
+    # --- Authorization ---
+    # Roles and document classifications, lowest to highest. Synced into the roles /
+    # document_classifications / role_classification_access tables at startup, but only
+    # rows that are MISSING are inserted: a grant revoked or added directly in the database
+    # (or via PUT /auth/access) survives a restart. Override from .env as JSON, e.g.
+    # AUTH_ROLE_ACCESS='{"user": ["public"], "admin": ["public", "internal"]}'.
+    auth_roles: list[str] = ["user", "staff", "manager", "admin"]
+    auth_classifications: list[str] = ["public", "internal", "confidential", "restricted"]
+    auth_role_access: dict[str, list[str]] = {
+        "user": ["public"],
+        "staff": ["public", "internal"],
+        "manager": ["public", "internal", "confidential"],
+        "admin": ["public", "internal", "confidential", "restricted"],
+    }
+    # Classification applied when an upload names none (and its frontmatter names none).
+    auth_default_classification: str = "internal"
+    # Role given to users created without an explicit role.
+    auth_default_user_role: str = "user"
+    # The admin account seeded (or re-promoted to admin) on every startup.
+    admin_username: str = "admin"
+    admin_display_name: str = "Administrator"
+    # Dev/test mode: seeds one demo user per non-admin role and exposes the unauthenticated
+    # GET /auth/demo-users list the UI role picker uses. Turn off once real login exists.
+    auth_dev_mode: bool = True
+    # Classification of the built-in seed documents, so every role has something to query.
+    seed_documents_classification: str = "public"
+
+    @model_validator(mode="after")
+    def _validate_authorization(self) -> Settings:
+        roles = set(self.auth_roles)
+        classifications = set(self.auth_classifications)
+        if "admin" not in roles:
+            raise ValueError("auth_roles must contain 'admin'")
+        for name in (self.auth_default_classification, self.seed_documents_classification):
+            if name not in classifications:
+                raise ValueError(f"Classification {name!r} is not in auth_classifications")
+        if self.auth_default_user_role not in roles:
+            raise ValueError(f"auth_default_user_role {self.auth_default_user_role!r} is unknown")
+        for role, granted in self.auth_role_access.items():
+            if role not in roles:
+                raise ValueError(f"auth_role_access names unknown role {role!r}")
+            unknown = set(granted) - classifications
+            if unknown:
+                raise ValueError(f"auth_role_access[{role!r}] names unknown {sorted(unknown)}")
+        return self
 
 
 settings = Settings()

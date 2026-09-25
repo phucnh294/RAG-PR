@@ -1,4 +1,26 @@
+import { authHeaders } from "../auth/identity";
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+/** fetch with the caller's identity header, turning error responses into readable Errors. */
+async function apiFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(input, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    const detail = typeof body.detail === "string" ? body.detail : response.statusText;
+    const prefix =
+      response.status === 401
+        ? "Not signed in"
+        : response.status === 403
+          ? "Permission denied"
+          : `Request failed (${response.status})`;
+    throw new Error(`${prefix}: ${detail}`);
+  }
+  return response;
+}
 
 export interface DocumentOut {
   id: string;
@@ -8,6 +30,11 @@ export interface DocumentOut {
   size_bytes: number;
   status: string;
   created_at: string;
+  classification: string;
+  tags: string[];
+  created_by: string | null;
+  created_by_username: string | null;
+  can_delete: boolean;
 }
 
 export interface UploadResponse {
@@ -15,33 +42,68 @@ export interface UploadResponse {
   already_exists: boolean;
 }
 
+export interface UploadOptions {
+  classification?: string;
+  tags?: string;
+}
+
 export async function fetchDocuments(): Promise<DocumentOut[]> {
-  const response = await fetch(`${API_BASE}/documents`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch documents: ${response.status}`);
-  }
+  const response = await apiFetch(`${API_BASE}/documents`);
   return response.json();
 }
 
-export async function uploadDocument(file: File): Promise<UploadResponse> {
+export async function uploadDocument(
+  file: File,
+  options: UploadOptions = {},
+): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`${API_BASE}/documents`, {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    const detail = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(detail.detail ?? `Upload failed: ${response.status}`);
-  }
+  if (options.classification) formData.append("classification", options.classification);
+  if (options.tags) formData.append("tags", options.tags);
+  const response = await apiFetch(`${API_BASE}/documents`, { method: "POST", body: formData });
   return response.json();
 }
 
 export async function deleteDocument(documentId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/documents/${documentId}`, { method: "DELETE" });
-  if (!response.ok) {
-    throw new Error(`Failed to delete document: ${response.status}`);
-  }
+  await apiFetch(`${API_BASE}/documents/${documentId}`, { method: "DELETE" });
+}
+
+export interface UserOut {
+  id: string;
+  username: string;
+  display_name: string | null;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface MeOut {
+  id: string;
+  username: string;
+  role: string;
+  allowed_classifications: string[];
+  is_admin: boolean;
+}
+
+export interface ClassificationsOut {
+  allowed: string[];
+  default: string;
+  all: string[];
+}
+
+export async function fetchDemoUsers(): Promise<UserOut[]> {
+  const response = await apiFetch(`${API_BASE}/auth/demo-users`);
+  return response.json();
+}
+
+export async function fetchMe(): Promise<MeOut> {
+  const response = await apiFetch(`${API_BASE}/auth/me`);
+  return response.json();
+}
+
+export async function fetchClassifications(): Promise<ClassificationsOut> {
+  const response = await apiFetch(`${API_BASE}/auth/classifications`);
+  return response.json();
 }
 
 export type PipelineName = "retrieval" | "indexing";
@@ -51,6 +113,7 @@ export interface LogSummary {
   pipeline: PipelineName;
   created_at: string;
   summary: string;
+  username: string | null;
 }
 
 export interface LogDetail {
@@ -64,18 +127,12 @@ export async function fetchLogs(pipeline?: PipelineName): Promise<LogSummary[]> 
   if (pipeline) {
     url.searchParams.set("pipeline", pipeline);
   }
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch logs: ${response.status}`);
-  }
+  const response = await apiFetch(url);
   return response.json();
 }
 
 export async function fetchLogDetail(pipeline: PipelineName, id: string): Promise<LogDetail> {
-  const response = await fetch(`${API_BASE}/logs/${pipeline}/${id}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch log: ${response.status}`);
-  }
+  const response = await apiFetch(`${API_BASE}/logs/${pipeline}/${id}`);
   return response.json();
 }
 
@@ -117,10 +174,7 @@ export interface EvalReport {
 }
 
 export async function runGuardrailEval(): Promise<EvalReport> {
-  const response = await fetch(`${API_BASE}/eval/run`, { method: "POST" });
-  if (!response.ok) {
-    throw new Error(`Failed to run guardrail evaluation: ${response.status}`);
-  }
+  const response = await apiFetch(`${API_BASE}/eval/run`, { method: "POST" });
   return response.json();
 }
 

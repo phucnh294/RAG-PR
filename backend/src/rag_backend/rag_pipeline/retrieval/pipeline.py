@@ -4,10 +4,12 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from rag_backend.auth.models import CurrentUser
 from rag_backend.config import settings
 from rag_backend.guardrails.prompts import REDACTED_LOG_MARKER
 from rag_backend.guardrails.schemas import EvidenceSummary
 from rag_backend.pipeline_logging import StepRecorder, new_request_id, write_retrieval_log
+from rag_backend.rag_pipeline.retrieval.state import RetrievalState
 from rag_backend.rag_pipeline.retrieval.step1_get_input import get_input
 from rag_backend.rag_pipeline.retrieval.step2_normalize_input import normalize_input
 from rag_backend.rag_pipeline.retrieval.step2b_input_guardrail import check_input_guardrail
@@ -43,7 +45,7 @@ def _chunk_text(text: str, size: int = _RESPONSE_CHUNK_SIZE) -> list[str]:
 
 
 async def run_retrieval(
-    message: str, document_ids: list[str] | None = None
+    message: str, user: CurrentUser, document_ids: list[str] | None = None
 ) -> AsyncIterator[bytes]:
     """Run the 10-step retrieval pipeline for one chat message.
 
@@ -54,9 +56,17 @@ async def run_retrieval(
     input/output/timestamps are written into a single JSON file under
     pipeline-logs/retrieval/ once the request finishes (see StepRecorder), so one
     exchange can also be inspected end-to-end without grepping logs.
+
+    `user` scopes the whole run: both searches only see documents whose classification
+    the user's role may read, and the log records who asked (so /logs can show each
+    user only their own exchanges).
     """
+    state = RetrievalState(request_id=new_request_id(), user=user, document_ids=document_ids)
     record: dict[str, Any] = {
-        "request_id": new_request_id(),
+        "request_id": state.request_id,
+        "user_id": user.id,
+        "username": user.username,
+        "role": user.role,
         "user_message": message,
         "document_ids_filter": document_ids,
         "steps": {},
@@ -96,14 +106,22 @@ async def run_retrieval(
         )
 
         steps.log_input(
-            "4_similarity_search", {"embedding_dimension": len(embedded_query.embedding)}
+            "4_similarity_search",
+            {
+                "embedding_dimension": len(embedded_query.embedding),
+                "search_mode": state.search_mode,
+                "user": user.username,
+                "role": user.role,
+                "allowed_classifications": sorted(state.allowed_classifications),
+            },
         )
-        scored_chunks = await similarity_search(embedded_query)
+        scored_chunks = await similarity_search(embedded_query, state)
         similarity_results = [
             {
                 "document_id": item.chunk.document_id,
                 "chunk_index": item.chunk.chunk_index,
                 "similarity_score": item.similarity_score,
+                "classification": item.chunk.classification,
                 "rrf_score": item.rrf_score,
                 "vector_rank": item.vector_rank,
                 "text_rank": item.text_rank,
@@ -114,7 +132,9 @@ async def run_retrieval(
         steps.log_output(
             "4_similarity_search",
             {
-                "search_mode": "hybrid" if settings.hybrid_search_enabled else "vector",
+                "search_mode": state.search_mode,
+                "vector_candidate_count": state.vector_candidate_count,
+                "text_candidate_count": state.text_candidate_count,
                 "result_count": len(scored_chunks),
                 "results": similarity_results,
             },
@@ -125,17 +145,24 @@ async def run_retrieval(
             {
                 "scored_chunk_count": len(scored_chunks),
                 "document_ids_filter": embedded_query.document_ids,
+                "allowed_classifications": sorted(state.allowed_classifications),
             },
         )
-        filtered_chunks = apply_metadata_filter(scored_chunks, embedded_query)
-        steps.log_output("5_metadata_filter", {"filtered_chunk_count": len(filtered_chunks)})
+        filtered_chunks = apply_metadata_filter(scored_chunks, embedded_query, state)
+        steps.log_output(
+            "5_metadata_filter",
+            {
+                "filtered_chunk_count": len(filtered_chunks),
+                "permission_dropped_count": state.permission_dropped_count,
+            },
+        )
 
         steps.log_input("6_reranking", {"chunk_count": len(filtered_chunks)})
         reranked_chunks = rerank(filtered_chunks)
         steps.log_output("6_reranking", {"chunk_count": len(reranked_chunks)})
 
         steps.log_input("7_combine_context", {"chunk_count": len(reranked_chunks)})
-        context = await combine_context(reranked_chunks)
+        context = await combine_context(reranked_chunks, state)
         citations = [citation.model_dump() for citation in context.citations]
         record["citations"] = citations
         record["evidence"] = context.evidence.model_dump()
@@ -190,4 +217,5 @@ async def run_retrieval(
         # early return, or output-guardrail redaction) — a mid-pipeline crash still
         # gets the raw partial output captured here for debugging.
         record.setdefault("llm_response", "".join(answer_chunks))
+        record["state"] = state.to_log()
         write_retrieval_log(record)

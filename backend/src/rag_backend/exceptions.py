@@ -30,6 +30,34 @@ class EmbeddingModelError(RagBackendError):
     """
 
 
+class AuthError(RagBackendError):
+    """Base class for authentication/authorization failures."""
+
+
+class UnknownUserError(AuthError):
+    """Raised when a request names a user id that does not exist (maps to HTTP 401)."""
+
+
+class InactiveUserError(AuthError):
+    """Raised when a request names a deactivated user (maps to HTTP 403)."""
+
+
+class PermissionDeniedError(AuthError):
+    """Raised when an authenticated user may not perform an action (maps to HTTP 403)."""
+
+
+class UserAlreadyExistsError(AuthError):
+    """Raised when creating a user whose username is taken (maps to HTTP 409)."""
+
+
+class InvalidRoleError(AuthError):
+    """Raised when a role name is not one of the configured roles (maps to HTTP 422)."""
+
+
+class InvalidClassificationError(AuthError):
+    """Raised when a classification name is not a known classification (maps to HTTP 422)."""
+
+
 class GuardrailJudgeError(RagBackendError):
     """Raised when the guardrail judge LLM is unreachable or times out.
 

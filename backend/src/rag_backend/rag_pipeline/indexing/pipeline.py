@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from typing import Any
 
 from rag_backend.config import settings
@@ -8,7 +9,7 @@ from rag_backend.db import postgres_store
 from rag_backend.exceptions import RagBackendError
 from rag_backend.pipeline_logging import StepRecorder, write_indexing_log
 from rag_backend.rag_pipeline.indexing.step1_load_input import load_input
-from rag_backend.rag_pipeline.indexing.step2_document_parsing import parse_document
+from rag_backend.rag_pipeline.indexing.step2_document_parsing import ParsedDocument, parse_document
 from rag_backend.rag_pipeline.indexing.step3_chunking_strategy import chunk_text
 from rag_backend.rag_pipeline.indexing.step4_preprocessing import preprocess_chunks
 from rag_backend.rag_pipeline.indexing.step5_extract_metadata import extract_metadata
@@ -35,11 +36,19 @@ async def run_indexing(document_id: str, filename: str, mime_type: str) -> None:
     ("Indexing - {step} {timestamp} - input/output: {data}"); the same data lands
     in a JSON file under pipeline-logs/indexing/ (see StepRecorder), mirroring the
     retrieval pipeline's per-request logs.
+
+    Ownership (created_by, classification) is recorded in the log so the /logs endpoint
+    can show a user only the indexing runs of their own uploads.
     """
+    document = await postgres_store.get_document_unscoped(document_id)
     record: dict[str, Any] = {
         "document_id": document_id,
         "filename": filename,
         "mime_type": mime_type,
+        "created_by": document.created_by if document is not None else None,
+        "created_by_username": document.created_by_username if document is not None else None,
+        "classification": document.classification if document is not None else None,
+        "tags": document.tags if document is not None else [],
         "steps": {},
     }
     steps = StepRecorder(logger, _PROCESS_NAME, record)
@@ -57,7 +66,14 @@ async def run_indexing(document_id: str, filename: str, mime_type: str) -> None:
             {"raw_bytes": len(loaded_file.raw_bytes), "mime_type": loaded_file.mime_type},
         )
         parsed = parse_document(loaded_file)
-        steps.log_output("2_document_parsing", {"parsed_text_chars": len(parsed.text)})
+        steps.log_output(
+            "2_document_parsing",
+            {
+                "parsed_text_chars": len(parsed.text),
+                "has_frontmatter": parsed.frontmatter is not None,
+            },
+        )
+        record["frontmatter"] = await _store_frontmatter_metadata(parsed)
 
         steps.log_input(
             "3_chunking_strategy",
@@ -68,7 +84,17 @@ async def run_indexing(document_id: str, filename: str, mime_type: str) -> None:
             },
         )
         chunks = chunk_text(parsed, settings.chunk_size_words, settings.chunk_overlap_words)
-        steps.log_output("3_chunking_strategy", {"chunk_count": len(chunks)})
+        strategy_counts = dict(Counter(chunk.strategy for chunk in chunks))
+        record["chunk_strategy"] = next(iter(strategy_counts), None)
+        steps.log_output(
+            "3_chunking_strategy",
+            {
+                "chunk_count": len(chunks),
+                "chunk_strategy": record["chunk_strategy"],
+                "chunks_per_strategy": strategy_counts,
+                "sections": [chunk.section_heading for chunk in chunks if chunk.section_heading],
+            },
+        )
 
         steps.log_input("4_preprocessing", {"chunk_count": len(chunks)})
         chunks = preprocess_chunks(chunks)
@@ -110,7 +136,14 @@ async def run_indexing(document_id: str, filename: str, mime_type: str) -> None:
         record["status"] = "ready"
         record["chunk_count"] = len(embedded_chunks)
         record["excerpts"] = excerpts
-        logger.info("Indexed document %s into %d chunks", document_id, len(embedded_chunks))
+        logger.info(
+            "Indexed document %s (%s, classification=%s) into %d %s chunks",
+            document_id,
+            filename,
+            record["classification"],
+            len(embedded_chunks),
+            record["chunk_strategy"],
+        )
     except RagBackendError as error:
         logger.warning("Indexing failed for document %s: %s", document_id, error)
         await postgres_store.update_document(document_id, status="failed", error_message=str(error))
@@ -118,3 +151,28 @@ async def run_indexing(document_id: str, filename: str, mime_type: str) -> None:
         record["error"] = str(error)
     finally:
         write_indexing_log(record)
+
+
+async def _store_frontmatter_metadata(parsed: ParsedDocument) -> dict[str, Any] | None:
+    """Copy frontmatter fields (date, area, tags, TL;DR) onto the rag_documents row so
+    they can pre-filter searches; returns what was stored, for the indexing log."""
+    frontmatter = parsed.frontmatter
+    if frontmatter is None:
+        return None
+    await postgres_store.update_document_metadata(
+        parsed.document_id,
+        doc_date=frontmatter.doc_date,
+        area=frontmatter.area,
+        tags=frontmatter.tags,
+        summary=frontmatter.tldr,
+        description=frontmatter.title,
+    )
+    return {
+        "title": frontmatter.title,
+        "type": frontmatter.doc_type,
+        "date": frontmatter.doc_date,
+        "area": frontmatter.area,
+        "tags": frontmatter.tags,
+        "classification": frontmatter.classification,
+        "has_tldr": frontmatter.tldr is not None,
+    }

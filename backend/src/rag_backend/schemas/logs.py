@@ -10,6 +10,7 @@ class LogSummary(BaseModel):
     pipeline: str
     created_at: str
     summary: str
+    username: str | None = None
 
 
 class LogDetail(BaseModel):
