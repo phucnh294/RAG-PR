@@ -12,18 +12,22 @@ from fastapi.responses import JSONResponse
 
 from rag_backend.api import (
     routes_auth,
+    routes_cache,
     routes_chat,
+    routes_conversations,
     routes_eval,
     routes_health,
     routes_logs,
     routes_upload,
 )
+from rag_backend.api.routes_chat import CONVERSATION_ID_HEADER
 from rag_backend.auth import seed as auth_seed
 from rag_backend.config import settings
-from rag_backend.db import authz_schema, postgres_store
+from rag_backend.db import authz_schema, chat_schema, postgres_store
 from rag_backend.db import session as db_session
 from rag_backend.exceptions import (
     AuthError,
+    ConversationNotFoundError,
     InactiveUserError,
     InvalidClassificationError,
     InvalidRoleError,
@@ -54,6 +58,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await db_session.init_pool()
     await postgres_store.ensure_fulltext_index()
     await authz_schema.ensure_authorization_schema()
+    await chat_schema.ensure_chat_schema()
     admin = await auth_seed.bootstrap_authorization()
     await authz_schema.finalize_document_ownership(admin.id, settings.auth_default_classification)
     await postgres_store.seed(admin.id)
@@ -74,6 +79,11 @@ async def _handle_auth_error(request: Request, error: Exception) -> JSONResponse
         error,
     )
     return JSONResponse(status_code=status, content={"detail": str(error)})
+
+
+async def _handle_conversation_not_found(request: Request, error: Exception) -> JSONResponse:
+    logger.info("Conversation not found path=%s: %s", request.url.path, error)
+    return JSONResponse(status_code=404, content={"detail": "Conversation not found"})
 
 
 async def _log_requests(
@@ -120,9 +130,10 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=[REQUEST_ID_HEADER],
+        expose_headers=[REQUEST_ID_HEADER, CONVERSATION_ID_HEADER],
     )
     app.add_exception_handler(AuthError, _handle_auth_error)
+    app.add_exception_handler(ConversationNotFoundError, _handle_conversation_not_found)
 
     # Every router except health and auth resolves the caller through
     # auth.dependencies.get_current_user inside its handlers (401 without X-User-Id).
@@ -130,6 +141,8 @@ def create_app() -> FastAPI:
     app.include_router(routes_auth.router)
     app.include_router(routes_upload.router)
     app.include_router(routes_chat.router)
+    app.include_router(routes_conversations.router)
+    app.include_router(routes_cache.router)
     app.include_router(routes_logs.router)
     app.include_router(routes_eval.router)
     return app

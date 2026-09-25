@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import pytest
 from fastapi.testclient import TestClient
 
+from rag_backend.config import settings
 from rag_backend.guardrails import judge_client
 from rag_backend.llm_model.client import LlmClient, LlmClientError
 
@@ -85,6 +86,8 @@ def test_chat_rerank_flag_reorders_with_the_cross_encoder_and_reports_it(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("rag_backend.llm_model.client.llm_client", FakeLlmClient(tokens=["ok"]))
+    # The same question twice would be a cache hit the second time; this compares retrieval.
+    monkeypatch.setattr(settings, "semantic_cache_enabled", False)
     question = "All employees are entitled to 20 days of paid annual leave per calendar year."
 
     reranked = client.post("/chat", json={"message": question, "rerank": True})

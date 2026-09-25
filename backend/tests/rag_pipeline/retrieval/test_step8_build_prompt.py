@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rag_backend.conversations.models import Turn
 from rag_backend.guardrails.schemas import EvidenceSummary
 from rag_backend.rag_pipeline.retrieval.step7_combine_context import CombinedContext
 from rag_backend.rag_pipeline.retrieval.step8_build_prompt import build_prompt
@@ -32,3 +33,25 @@ def test_build_prompt_asks_the_llm_to_say_it_does_not_know_when_no_citations() -
 
     assert "say you" in messages[0]["content"]
     assert messages[1] == {"role": "user", "content": "anything?"}
+
+
+def test_build_prompt_puts_history_turns_between_system_and_question() -> None:
+    context = CombinedContext(citations=[], context_text="", evidence=_NO_EVIDENCE)
+    history = [
+        Turn(question="first?", answer="one."),
+        Turn(question="second?", answer="two."),
+    ]
+
+    messages = build_prompt("third?", context, history)
+
+    assert [message["role"] for message in messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+    ]
+    assert messages[1]["content"] == "first?"
+    assert messages[4]["content"] == "two."
+    assert messages[-1] == {"role": "user", "content": "third?"}

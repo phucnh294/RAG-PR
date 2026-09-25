@@ -30,6 +30,18 @@ class RetrievalState:
     rerank_status: str = "disabled"
     rerank_candidate_count: int | None = None
     rerank_duration_ms: float | None = None
+    conversation_id: str | None = None
+    memory_enabled: bool = field(default_factory=lambda: settings.memory_enabled_default)
+    memory_turns: int = field(default_factory=lambda: settings.memory_turns_default)
+    history_turns_used: int = 0
+    # The question retrieval and the cache actually used: the step-2c rewrite of a
+    # follow-up, or the normalized question when nothing was rewritten.
+    standalone_question: str | None = None
+    # "disabled" (setting off), "bypassed" (this request opted out, e.g. evals or a
+    # document filter), "miss", "hit" or "error" (cache table unreachable -> miss).
+    cache_status: str = "disabled"
+    cache_similarity: float | None = None
+    cache_entry_id: str | None = None
 
     @property
     def allowed_classifications(self) -> frozenset[str]:
@@ -51,4 +63,12 @@ class RetrievalState:
             "rerank_status": self.rerank_status,
             "rerank_candidate_count": self.rerank_candidate_count,
             "rerank_duration_ms": self.rerank_duration_ms,
+            "conversation_id": self.conversation_id,
+            "memory_enabled": self.memory_enabled,
+            "memory_turns": self.memory_turns,
+            "history_turns_used": self.history_turns_used,
+            "standalone_question": self.standalone_question,
+            "cache_status": self.cache_status,
+            "cache_similarity": self.cache_similarity,
+            "cache_entry_id": self.cache_entry_id,
         }

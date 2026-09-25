@@ -3,7 +3,7 @@ title: Rerank Deployed, Chat Sessions, Guardrail Judge Off, LLM Failure Handling
 date: 2026-09-25
 type: session-handoff
 area: retrieval-rerank
-status: in-progress
+status: superseded
 session_id: 1d4109db-3e76-42fd-818f-e1c4b5ff2169
 tags: [retrieval, rerank, cross-encoder, eval, docker, frontend, chat-sessions, guardrails, llm, security]
 keywords: [feature/cross-encoder-rerank, reranker-model, ms-marco-MiniLM-L6-v2, onnxruntime, RERANK_CANDIDATE_K, RERANKER_THREADS, ChatSessionList, rag.chatSessions, GUARDRAIL_INPUT_ENABLED, GUARDRAIL_OUTPUT_ENABLED, LlmClientError, llm_unavailable_message, x-goog-api-key, _default_settings]

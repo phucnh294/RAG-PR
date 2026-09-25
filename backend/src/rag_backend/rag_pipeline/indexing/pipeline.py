@@ -16,6 +16,7 @@ from rag_backend.rag_pipeline.indexing.step5_extract_metadata import extract_met
 from rag_backend.rag_pipeline.indexing.step6_embedding import embed_chunks
 from rag_backend.rag_pipeline.indexing.step7_store_documents import store_document
 from rag_backend.rag_pipeline.indexing.step8_store_chunks import store_chunks
+from rag_backend.semantic_cache import service as semantic_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,11 @@ async def run_indexing(document_id: str, filename: str, mime_type: str) -> None:
         )
         await store_chunks(document_id, embedded_chunks)
         steps.log_output("8_store_chunks", {"stored_chunk_count": len(embedded_chunks)})
+
+        # Cached answers for every scope that can read this document were built without
+        # it; drop them so the next question sees the new content.
+        if record["classification"]:
+            await semantic_cache_service.invalidate_classification(record["classification"])
 
         record["status"] = "ready"
         record["chunk_count"] = len(embedded_chunks)

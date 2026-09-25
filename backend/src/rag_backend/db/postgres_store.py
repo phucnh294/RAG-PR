@@ -101,6 +101,23 @@ async def get_document(document_id: str, user_id: str) -> DocumentRecord | None:
     return _row_to_document(row) if row is not None else None
 
 
+async def count_accessible_documents(document_ids: list[str], user_id: str) -> int:
+    """How many of the given documents the user may read right now (permission view)."""
+    user_uuid = _as_uuid(user_id)
+    doc_uuids = [doc_uuid for doc_uuid in map(_as_uuid, document_ids) if doc_uuid is not None]
+    if user_uuid is None or not doc_uuids:
+        return 0
+    count = await get_pool().fetchval(
+        """
+        SELECT COUNT(DISTINCT id) FROM v_user_accessible_documents
+        WHERE user_id = $1 AND id = ANY($2::uuid[])
+        """,
+        user_uuid,
+        doc_uuids,
+    )
+    return int(count or 0)
+
+
 async def get_document_unscoped(document_id: str) -> DocumentRecord | None:
     """Raw read with no permission check — indexing runner/seeding only, never a handler."""
     doc_uuid = _as_uuid(document_id)
