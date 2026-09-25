@@ -3,7 +3,7 @@ title: Hybrid Search (pgvector + Postgres Full-Text) Fused with RRF
 date: 2026-09-24
 type: session-handoff
 area: rag-retrieval
-status: in-progress
+status: superseded
 session_id: 0009fab7-f0b1-4cc3-adbc-6c9b3b61b145
 tags: [hybrid-search, full-text-search, rrf, pgvector, retrieval, rag-pipeline, backend, postgres]
 keywords: [content_tsv, tsvector, plainto_tsquery, ts_rank_cd, reciprocal_rank_fusion, search_fulltext_chunks, ensure_fulltext_index, HYBRID_SEARCH_ENABLED, HYBRID_CANDIDATE_K, RRF_K, FULLTEXT_SEARCH_CONFIG, matched_fulltext, rag_chunks_content_tsv_idx]
