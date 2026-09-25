@@ -35,7 +35,7 @@ async def test_golden_set_never_false_blocks_legitimate_traffic(
 
 
 async def test_golden_set_catches_attacks_and_measures_retrieval_quality(
-    auth_users: dict[str, CurrentUser],
+    auth_users: dict[str, CurrentUser], seeded_corpus: None
 ) -> None:
     report = await run_golden_set(auth_users["admin"])
     by_category = {metrics.category: metrics for metrics in report.categories}

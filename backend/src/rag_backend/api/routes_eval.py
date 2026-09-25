@@ -3,8 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from rag_backend.auth.dependencies import AdminUserDep
+from rag_backend.eval.rerank_comparison import run_rerank_comparison
 from rag_backend.eval.runner import run_golden_set
-from rag_backend.eval.schemas import EvalReport
+from rag_backend.eval.schemas import EvalReport, RerankComparisonReport
 
 router = APIRouter(prefix="/eval", tags=["eval"])
 
@@ -18,3 +19,14 @@ async def run_eval(admin: AdminUserDep) -> EvalReport:
     Admin only, for the same reason.
     """
     return await run_golden_set(admin)
+
+
+@router.post("/rerank-comparison", response_model=RerankComparisonReport)
+async def rerank_comparison(admin: AdminUserDep) -> RerankComparisonReport:
+    """Score the golden set's retrieval twice over the same candidate pool — hybrid order
+    vs cross-encoder order — and return both arms' recall/MRR/nDCG plus the deltas.
+
+    No LLM calls (retrieval only), but it does call the reranker once per query, so it
+    is a POST and admin-only like /eval/run.
+    """
+    return await run_rerank_comparison(admin)

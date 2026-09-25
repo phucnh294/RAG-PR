@@ -11,7 +11,13 @@ type PipelineFilter = "all" | PipelineName;
 
 const FILTERS: PipelineFilter[] = ["all", "retrieval", "indexing"];
 
-export default function LogsPage() {
+interface LogsPageProps {
+  /** True while this tab is shown: the list refreshes each time the tab is opened (new
+   * chats write new logs) without clearing the filter or the selected log. */
+  active: boolean;
+}
+
+export default function LogsPage({ active }: LogsPageProps) {
   const [filter, setFilter] = useState<PipelineFilter>("all");
   const [logs, setLogs] = useState<LogSummary[]>([]);
   const [selected, setSelected] = useState<LogSummary | null>(null);
@@ -28,8 +34,8 @@ export default function LogsPage() {
   }, [filter]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (active) refresh();
+  }, [active, refresh]);
 
   useEffect(() => {
     if (!selected) {

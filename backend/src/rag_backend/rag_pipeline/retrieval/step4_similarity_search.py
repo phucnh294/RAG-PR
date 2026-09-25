@@ -16,7 +16,9 @@ class ScoredChunk:
     similarity_score is always the cosine similarity to the question (used by the
     step-7 threshold and the evidence guardrail). The hybrid fields are None in
     vector-only mode; vector_rank/text_rank are 1-based positions in each retriever's
-    list, None when that retriever didn't return the chunk.
+    list, None when that retriever didn't return the chunk. The rerank fields are set
+    by step 6 only when reranking ran: pre_rerank_rank is the chunk's 1-based position
+    in the hybrid/vector order it arrived in.
     """
 
     chunk: ChunkRecord
@@ -24,6 +26,8 @@ class ScoredChunk:
     rrf_score: float | None = None
     vector_rank: int | None = None
     text_rank: int | None = None
+    rerank_score: float | None = None
+    pre_rerank_rank: int | None = None
 
     @property
     def matched_fulltext(self) -> bool:
@@ -40,8 +44,13 @@ async def similarity_search(
     Rank Fusion. Vector-only mode ranks by cosine similarity via pgvector's `<=>`.
     Both searches are permission-filtered in SQL by state.user.id (through the
     v_user_accessible_chunks view), before their LIMIT and before fusion.
+
+    When state.rerank_enabled, returns up to rerank_candidate_k results instead, so the
+    step-6 cross-encoder has a wider pool to promote from before the final top_k cut.
     """
     limit = top_k if top_k is not None else settings.retrieval_top_k
+    if state.rerank_enabled:
+        limit = max(limit, settings.rerank_candidate_k)
     user_id = state.user.id
     if state.search_mode != "hybrid":
         results = await postgres_store.search_similar_chunks(query.embedding, limit, user_id)

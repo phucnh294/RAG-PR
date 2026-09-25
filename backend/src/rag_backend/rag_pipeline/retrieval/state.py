@@ -24,6 +24,12 @@ class RetrievalState:
     vector_candidate_count: int | None = None
     text_candidate_count: int | None = None
     permission_dropped_count: int = 0
+    rerank_enabled: bool = field(default_factory=lambda: settings.rerank_enabled_default)
+    # "disabled" (not requested), "applied", "failed" (reranker error -> hybrid order kept)
+    # or "skipped" (requested but nothing to rerank).
+    rerank_status: str = "disabled"
+    rerank_candidate_count: int | None = None
+    rerank_duration_ms: float | None = None
 
     @property
     def allowed_classifications(self) -> frozenset[str]:
@@ -41,4 +47,8 @@ class RetrievalState:
             "vector_candidate_count": self.vector_candidate_count,
             "text_candidate_count": self.text_candidate_count,
             "permission_dropped_count": self.permission_dropped_count,
+            "rerank_enabled": self.rerank_enabled,
+            "rerank_status": self.rerank_status,
+            "rerank_candidate_count": self.rerank_candidate_count,
+            "rerank_duration_ms": self.rerank_duration_ms,
         }

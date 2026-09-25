@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from rag_backend.eval.schemas import Category, CategoryMetrics, QueryEvalResult
+import math
+
+from rag_backend.eval.schemas import Category, CategoryMetrics, QueryEvalResult, RankingMetrics
 
 # Best-effort heuristic: no ground-truth "did the LLM refuse" signal exists elsewhere,
 # so refusal is detected by substring match on common refusal phrasing. Used
@@ -47,12 +49,17 @@ def aggregate_category_metrics(
     blocked_fraction = sum(1 for r in results if r.blocked) / len(results)
 
     if category == "real":
-        metrics.recall_at_k = sum(
-            1 for r in results if r.matched_rank is not None and r.matched_rank <= k
-        ) / len(results)
-        metrics.mrr = sum(1.0 / r.matched_rank if r.matched_rank else 0.0 for r in results) / len(
-            results
-        )
+        # An entry whose expected document isn't indexed (or visible to the eval user)
+        # has no target to find — scoring it as a miss would measure the corpus, not
+        # retrieval.
+        scored = [r for r in results if r.expected_document_id is not None]
+        if scored:
+            metrics.recall_at_k = sum(
+                1 for r in scored if r.matched_rank is not None and r.matched_rank <= k
+            ) / len(scored)
+            metrics.mrr = sum(1.0 / r.matched_rank if r.matched_rank else 0.0 for r in scored) / (
+                len(scored)
+            )
         metrics.false_block_rate = blocked_fraction
     elif category == "expect":
         metrics.refusal_rate = sum(1 for r in results if r.refused) / len(results)
@@ -61,3 +68,40 @@ def aggregate_category_metrics(
         metrics.block_rate = blocked_fraction
 
     return metrics
+
+
+def ndcg_at_k(rank: int | None, k: int) -> float:
+    """nDCG@k with a single relevant item: 1 / log2(rank + 1) inside the top k, else 0.
+
+    The ideal ranking puts the one relevant item first (IDCG = 1), so DCG is the score.
+    """
+    if rank is None or rank > k:
+        return 0.0
+    return 1.0 / math.log2(rank + 1)
+
+
+def ranking_metrics(ranks: list[int | None], k: int) -> RankingMetrics:
+    """Aggregate one arm's per-query ranks (None = relevant chunk not retrieved)."""
+    count = len(ranks)
+    if count == 0:
+        return RankingMetrics(
+            query_count=0, recall_at_1=0.0, recall_at_k=0.0, mrr=0.0, ndcg_at_k=0.0
+        )
+    return RankingMetrics(
+        query_count=count,
+        recall_at_1=sum(1 for rank in ranks if rank == 1) / count,
+        recall_at_k=sum(1 for rank in ranks if rank is not None and rank <= k) / count,
+        mrr=sum(1.0 / rank for rank in ranks if rank is not None) / count,
+        ndcg_at_k=sum(ndcg_at_k(rank, k) for rank in ranks) / count,
+    )
+
+
+def metrics_delta(before: RankingMetrics, after: RankingMetrics) -> RankingMetrics:
+    """after - before, field by field (positive = reranking helped)."""
+    return RankingMetrics(
+        query_count=after.query_count,
+        recall_at_1=after.recall_at_1 - before.recall_at_1,
+        recall_at_k=after.recall_at_k - before.recall_at_k,
+        mrr=after.mrr - before.mrr,
+        ndcg_at_k=after.ndcg_at_k - before.ndcg_at_k,
+    )

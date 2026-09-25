@@ -8,6 +8,7 @@ from rag_backend.auth.models import CurrentUser
 from rag_backend.config import settings
 from rag_backend.guardrails.prompts import REDACTED_LOG_MARKER
 from rag_backend.guardrails.schemas import EvidenceSummary
+from rag_backend.llm_model.client import LlmClientError
 from rag_backend.pipeline_logging import StepRecorder, new_request_id, write_retrieval_log
 from rag_backend.rag_pipeline.retrieval.state import RetrievalState
 from rag_backend.rag_pipeline.retrieval.step1_get_input import get_input
@@ -45,7 +46,10 @@ def _chunk_text(text: str, size: int = _RESPONSE_CHUNK_SIZE) -> list[str]:
 
 
 async def run_retrieval(
-    message: str, user: CurrentUser, document_ids: list[str] | None = None
+    message: str,
+    user: CurrentUser,
+    document_ids: list[str] | None = None,
+    rerank_enabled: bool | None = None,
 ) -> AsyncIterator[bytes]:
     """Run the 10-step retrieval pipeline for one chat message.
 
@@ -60,8 +64,13 @@ async def run_retrieval(
     `user` scopes the whole run: both searches only see documents whose classification
     the user's role may read, and the log records who asked (so /logs can show each
     user only their own exchanges).
+
+    `rerank_enabled` turns the step-6 cross-encoder on/off for this request; None falls
+    back to settings.rerank_enabled_default.
     """
     state = RetrievalState(request_id=new_request_id(), user=user, document_ids=document_ids)
+    if rerank_enabled is not None:
+        state.rerank_enabled = rerank_enabled
     record: dict[str, Any] = {
         "request_id": state.request_id,
         "user_id": user.id,
@@ -95,7 +104,7 @@ async def run_retrieval(
         if input_result.blocked:
             refusal = settings.guardrail_refusal_message
             yield refusal.encode("utf-8")
-            yield build_citations_payload([], [input_result.verdict], _NO_EVIDENCE)
+            yield build_citations_payload([], [input_result.verdict], _NO_EVIDENCE, state)
             record["llm_response"] = refusal
             return
 
@@ -157,9 +166,33 @@ async def run_retrieval(
             },
         )
 
-        steps.log_input("6_reranking", {"chunk_count": len(filtered_chunks)})
-        reranked_chunks = rerank(filtered_chunks)
-        steps.log_output("6_reranking", {"chunk_count": len(reranked_chunks)})
+        steps.log_input(
+            "6_reranking",
+            {"chunk_count": len(filtered_chunks), "rerank_enabled": state.rerank_enabled},
+        )
+        reranked_chunks = await rerank(normalized.text, filtered_chunks, state)
+        rerank_results = [
+            {
+                "document_id": item.chunk.document_id,
+                "chunk_index": item.chunk.chunk_index,
+                "pre_rerank_rank": item.pre_rerank_rank,
+                "rerank_score": item.rerank_score,
+                "similarity_score": item.similarity_score,
+                "rrf_score": item.rrf_score,
+            }
+            for item in reranked_chunks
+        ]
+        record["rerank_results"] = rerank_results
+        steps.log_output(
+            "6_reranking",
+            {
+                "rerank_status": state.rerank_status,
+                "rerank_candidate_count": state.rerank_candidate_count,
+                "rerank_duration_ms": state.rerank_duration_ms,
+                "chunk_count": len(reranked_chunks),
+                "results": rerank_results,
+            },
+        )
 
         steps.log_input("7_combine_context", {"chunk_count": len(reranked_chunks)})
         context = await combine_context(reranked_chunks, state)
@@ -187,8 +220,23 @@ async def run_retrieval(
         )
 
         steps.log_input("9_call_llm_model", {"messages": messages})
-        async for token in call_llm_model(messages):
-            answer_chunks.append(token)
+        try:
+            async for token in call_llm_model(messages):
+                answer_chunks.append(token)
+        except LlmClientError as error:
+            # The HTTP 200 streaming response has already started, so raising here would
+            # just cut the stream and leave the chat with an empty bubble. Answer with the
+            # reason instead, and still send the citations retrieval found.
+            record["error"] = str(error)
+            logger.warning("Answer LLM failed for request %s: %s", state.request_id, error)
+            unavailable = settings.llm_unavailable_message.format(reason=error)
+            record["llm_response"] = unavailable
+            steps.log_output("9_call_llm_model", {"error": str(error)})
+            yield unavailable.encode("utf-8")
+            yield build_citations_payload(
+                context.citations, [input_result.verdict], context.evidence, state
+            )
+            return
         answer = "".join(answer_chunks)
         steps.log_output("9_call_llm_model", {"answer_length_chars": len(answer), "answer": answer})
 
@@ -204,7 +252,10 @@ async def run_retrieval(
 
         steps.log_input("10_response", {"citation_count": len(citations)})
         citations_payload = build_citations_payload(
-            context.citations, [input_result.verdict, output_result.verdict], context.evidence
+            context.citations,
+            [input_result.verdict, output_result.verdict],
+            context.evidence,
+            state,
         )
         yield citations_payload
         steps.log_output("10_response", {"citations_payload_bytes": len(citations_payload)})

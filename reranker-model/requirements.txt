@@ -1,0 +1,5 @@
+fastapi==0.118.0
+uvicorn==0.37.0
+onnxruntime==1.23.0
+tokenizers==0.22.1
+numpy==2.3.3

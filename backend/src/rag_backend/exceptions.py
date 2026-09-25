@@ -30,6 +30,15 @@ class EmbeddingModelError(RagBackendError):
     """
 
 
+class RerankerModelError(RagBackendError):
+    """Raised when the reranker-model container is unreachable, times out, errors, or
+    returns a malformed response.
+
+    Step 6 catches it and falls back to the hybrid (RRF) order, so a reranker outage
+    degrades ranking quality but never fails a chat request.
+    """
+
+
 class AuthError(RagBackendError):
     """Base class for authentication/authorization failures."""
 

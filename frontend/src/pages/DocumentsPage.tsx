@@ -3,7 +3,13 @@ import { fetchDocuments, type DocumentOut } from "../api/client";
 import DocumentUpload from "../components/DocumentUpload";
 import DocumentList from "../components/DocumentList";
 
-export default function DocumentsPage() {
+interface DocumentsPageProps {
+  /** True while this tab is shown: the list re-syncs each time the tab is opened, keeping
+   * what's on screen until the fresh list arrives. */
+  active: boolean;
+}
+
+export default function DocumentsPage({ active }: DocumentsPageProps) {
   const [documents, setDocuments] = useState<DocumentOut[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -14,8 +20,8 @@ export default function DocumentsPage() {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (active) refresh();
+  }, [active, refresh]);
 
   return (
     <section className="page">

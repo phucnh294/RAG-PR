@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://llm-model:11434"
     llm_model_name: str = "qwen2.5:0.5b-instruct"
     llm_request_timeout_seconds: float = 60.0
+    # Shown as the chat answer when the answer LLM fails (provider down, 503, timeout);
+    # {reason} is a log-safe summary such as "google request failed: HTTP 503 ...".
+    llm_unavailable_message: str = (
+        "The answer model is unavailable right now ({reason}). Please try again shortly."
+    )
 
     google_api_key: str | None = None
     google_model_name: str = "gemini-2.0-flash"
@@ -84,6 +89,23 @@ class Settings(BaseSettings):
     # indexing time and to parse the query. Changing it only affects newly indexed
     # chunks — re-index (or NULL out content_tsv and restart) to rebuild old ones.
     fulltext_search_config: str = "english"
+
+    # Cross-encoder reranking (step 6), served by the reranker-model container over a
+    # text-embeddings-inference-compatible /rerank API. When a request enables it, step 4 returns
+    # rerank_candidate_k fused candidates instead of retrieval_top_k; the cross-encoder
+    # scores every (question, chunk) pair and the reordered list is cut to retrieval_top_k.
+    # rerank_enabled_default applies when the chat request doesn't say (the UI always does).
+    rerank_enabled_default: bool = False
+    reranker_base_url: str = "http://reranker-model:8080"
+    reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
+    # Rerank latency grows linearly with this (CPU: ~1.8 s at 10, ~3.5 s at 20 measured).
+    # 10 gave the same quality gain as 20 on the golden set (every rerank win was a
+    # hybrid rank 2-4); raise it if the right chunk often sits deeper than rank 10.
+    rerank_candidate_k: int = 10
+    reranker_request_timeout_seconds: float = 15.0
+    # reranker-model (like TEI's --max-client-batch-size) rejects requests with more
+    # than 32 texts.
+    reranker_batch_size: int = 32
 
     # Postgres connection. Defaults match .env.example / a local `docker compose up`;
     # postgres_host/port are overridden in docker-compose.yml's backend service to

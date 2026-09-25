@@ -11,7 +11,7 @@ from rag_backend.auth import seed as auth_seed
 from rag_backend.auth import service as auth_service
 from rag_backend.auth.dependencies import USER_ID_HEADER
 from rag_backend.auth.models import ADMIN_ROLE, CurrentUser
-from rag_backend.config import settings
+from rag_backend.config import Settings, settings
 from rag_backend.db import authz_schema, postgres_store
 from rag_backend.db import session as db_session
 from rag_backend.embedding_model import client as embedding_model_client
@@ -19,6 +19,8 @@ from rag_backend.embedding_model import fake_client as fake_embedding_client
 from rag_backend.guardrails import judge_client
 from rag_backend.llm_model.client import LlmClient
 from rag_backend.main import create_app
+from rag_backend.reranker_model import client as reranker_model_client
+from rag_backend.reranker_model import fake_client as fake_reranker_client
 from rag_backend.storage import dummy_store
 
 
@@ -84,6 +86,17 @@ async def _noop_finalize_document_ownership(admin_user_id: str, default: str) ->
 
 
 @pytest.fixture(autouse=True)
+def _default_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset every setting to its code default, so tests never depend on the developer's
+    repo-root .env (e.g. GUARDRAIL_INPUT_ENABLED=false or LLM_PROVIDER=google there
+    would otherwise change what the guardrail/LLM tests exercise). Tests that need a
+    different value still monkeypatch it themselves.
+    """
+    for name, field in Settings.model_fields.items():
+        monkeypatch.setattr(settings, name, field.get_default(call_default_factory=True))
+
+
+@pytest.fixture(autouse=True)
 def _fake_postgres_store(monkeypatch: pytest.MonkeyPatch) -> None:
     """Route every rag_backend.db.postgres_store and rag_backend.auth.repository call to
     the in-memory dummy_store, and make the schema/pool startup steps no-ops.
@@ -113,6 +126,15 @@ def _fake_embedding_client(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(
         embedding_model_client, "embedding_client", fake_embedding_client.EmbeddingClient()
+    )
+
+
+@pytest.fixture(autouse=True)
+def _fake_reranker_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Route rag_backend.reranker_model.client.reranker_client to the term-overlap fake,
+    so rerank-enabled tests never try to reach the reranker-model container."""
+    monkeypatch.setattr(
+        reranker_model_client, "reranker_client", fake_reranker_client.RerankerClient()
     )
 
 

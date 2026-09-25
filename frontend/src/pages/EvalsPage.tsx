@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { runGuardrailEval, type CategoryMetrics, type EvalReport } from "../api/client";
+import RerankComparison from "../components/RerankComparison";
 
 const CATEGORY_LABELS: Record<string, string> = {
   real: "Real (legitimate, answerable)",
@@ -132,6 +133,7 @@ export default function EvalsPage() {
           </div>
         </>
       )}
+      <RerankComparison />
     </section>
   );
 }
