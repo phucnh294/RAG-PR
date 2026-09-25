@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
   content_tsv tsvector,               -- [Lab3] full-text
   UNIQUE (document_id, chunk_index)
 );
+-- Filled by the backend on insert (to_tsvector(FULLTEXT_SEARCH_CONFIG, content)); the
+-- backend also re-runs this index creation + a backfill on startup for older volumes.
+CREATE INDEX IF NOT EXISTS rag_chunks_content_tsv_idx ON rag_chunks USING GIN (content_tsv);
 
 -- 3) EMBEDDINGS — 1 vector / chunk
 CREATE TABLE IF NOT EXISTS rag_embeddings (

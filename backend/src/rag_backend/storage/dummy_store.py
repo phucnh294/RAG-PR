@@ -11,6 +11,7 @@ this in-memory version instead of a real database.
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -113,6 +114,49 @@ async def search_similar_chunks(
     ]
     scored.sort(key=lambda item: item[1], reverse=True)
     return scored[:top_k]
+
+
+_TERM_PATTERN = re.compile(r"\w+")
+# Tiny stand-in for Postgres's english stop-word list — just enough that questions like
+# "what is the ..." don't match every chunk through their filler words.
+_STOP_WORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "do", "does", "for", "from",
+        "how", "in", "is", "it", "of", "on", "or", "that", "the", "this", "to", "was",
+        "what", "when", "where", "which", "who", "why", "with",
+    }
+)  # fmt: skip
+
+
+def _terms(text: str) -> set[str]:
+    return {
+        term
+        for term in _TERM_PATTERN.findall(text.lower())
+        if len(term) > 1 and term not in _STOP_WORDS
+    }
+
+
+async def search_fulltext_chunks(
+    query_text: str, embedding: list[float], top_k: int
+) -> list[tuple[ChunkRecord, float]]:
+    """Rank chunks sharing at least one query term by how many distinct terms they share.
+
+    A rough approximation of postgres_store.search_fulltext_chunks (OR-ed plainto_tsquery
+    ranked by ts_rank_cd) — no stemming, but the same shape: keyword-matching chunks
+    only, each paired with its cosine similarity to `embedding`.
+    """
+    query_terms = _terms(query_text)
+    matches: list[tuple[ChunkRecord, int]] = []
+    for chunk in await all_chunks():
+        overlap = len(query_terms & _terms(chunk.content))
+        if overlap:
+            matches.append((chunk, overlap))
+    matches.sort(key=lambda item: item[1], reverse=True)
+    return [(chunk, _cosine_similarity(embedding, chunk.embedding)) for chunk, _ in matches[:top_k]]
+
+
+async def ensure_fulltext_index() -> None:
+    """No-op: the in-memory store tokenizes chunk content on every search."""
 
 
 async def seed() -> None:

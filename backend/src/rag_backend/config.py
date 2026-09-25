@@ -46,7 +46,11 @@ class Settings(BaseSettings):
     google_model_name: str = "gemini-2.0-flash"
 
     embedding_base_url: str = "http://embedding-model:11434"
-    embedding_request_timeout_seconds: float = 30.0
+    # Per /api/embed request, i.e. per batch below — not per document.
+    embedding_request_timeout_seconds: float = 60.0
+    # Chunks per /api/embed request. On CPU Ollama a 21-chunk request took ~33s
+    # (measured), so whole-document requests timed out and left documents with no chunks.
+    embedding_batch_size: int = 8
 
     chunk_size_words: int = 200
     chunk_overlap_words: int = 20
@@ -66,6 +70,19 @@ class Settings(BaseSettings):
     # doc 01's originally-documented 0.5 let those false positives through, so this
     # is set above the observed noise ceiling instead.
     min_similarity_score: float = 0.7
+
+    # Hybrid search: pgvector cosine search + Postgres full-text search over
+    # rag_chunks.content_tsv, fused with Reciprocal Rank Fusion (score = sum of
+    # 1 / (rrf_k + rank) across both result lists). Each retriever returns up to
+    # hybrid_candidate_k candidates; the fused list is then cut to retrieval_top_k.
+    # When disabled, step 4 falls back to pure vector search.
+    hybrid_search_enabled: bool = True
+    hybrid_candidate_k: int = 20
+    rrf_k: int = 60
+    # Postgres text search configuration (regconfig) used both to build content_tsv at
+    # indexing time and to parse the query. Changing it only affects newly indexed
+    # chunks — re-index (or NULL out content_tsv and restart) to rebuild old ones.
+    fulltext_search_config: str = "english"
 
     # Postgres connection. Defaults match .env.example / a local `docker compose up`;
     # postgres_host/port are overridden in docker-compose.yml's backend service to

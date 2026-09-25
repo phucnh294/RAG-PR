@@ -16,6 +16,7 @@ from rag_backend.logging_config import configure_logging
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await init_pool()
+    await postgres_store.ensure_fulltext_index()
     await postgres_store.seed()
     yield
     await close_pool()
