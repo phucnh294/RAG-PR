@@ -67,6 +67,19 @@ class Settings(BaseSettings):
     # is set above the observed noise ceiling instead.
     min_similarity_score: float = 0.7
 
+    # Hybrid search: pgvector cosine search + Postgres full-text search over
+    # rag_chunks.content_tsv, fused with Reciprocal Rank Fusion (score = sum of
+    # 1 / (rrf_k + rank) across both result lists). Each retriever returns up to
+    # hybrid_candidate_k candidates; the fused list is then cut to retrieval_top_k.
+    # When disabled, step 4 falls back to pure vector search.
+    hybrid_search_enabled: bool = True
+    hybrid_candidate_k: int = 20
+    rrf_k: int = 60
+    # Postgres text search configuration (regconfig) used both to build content_tsv at
+    # indexing time and to parse the query. Changing it only affects newly indexed
+    # chunks — re-index (or NULL out content_tsv and restart) to rebuild old ones.
+    fulltext_search_config: str = "english"
+
     # Postgres connection. Defaults match .env.example / a local `docker compose up`;
     # postgres_host/port are overridden in docker-compose.yml's backend service to
     # reach the postgres container over the internal Docker network (port 5432 there,

@@ -43,6 +43,8 @@ _STORE_FUNCTIONS = (
     "get_chunks",
     "all_chunks",
     "search_similar_chunks",
+    "search_fulltext_chunks",
+    "ensure_fulltext_index",
     "seed",
 )
 

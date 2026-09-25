@@ -6,7 +6,9 @@ from rag_backend.rag_pipeline.retrieval.step7_combine_context import combine_con
 from rag_backend.storage import dummy_store
 
 
-def _scored_chunk(document_id: str, content: str, score: float) -> ScoredChunk:
+def _scored_chunk(
+    document_id: str, content: str, score: float, text_rank: int | None = None
+) -> ScoredChunk:
     chunk = dummy_store.ChunkRecord(
         id=f"chunk-{document_id}",
         document_id=document_id,
@@ -15,7 +17,23 @@ def _scored_chunk(document_id: str, content: str, score: float) -> ScoredChunk:
         embedding=[1.0],
         metadata={"word_count": len(content.split()), "char_count": len(content)},
     )
-    return ScoredChunk(chunk=chunk, similarity_score=score)
+    return ScoredChunk(chunk=chunk, similarity_score=score, text_rank=text_rank)
+
+
+async def test_combine_context_keeps_fulltext_match_below_threshold() -> None:
+    doc = await dummy_store.add_document(
+        filename="errors.md", content_hash="h1", mime_type="text/markdown", size_bytes=10
+    )
+    below_threshold_score = settings.min_similarity_score - 0.2
+    chunks = [
+        _scored_chunk(doc.id, "ERR6002 means timeout", below_threshold_score, text_rank=1),
+        _scored_chunk(doc.id, "vector-only noise", below_threshold_score),
+    ]
+
+    result = await combine_context(chunks)
+
+    assert [citation.excerpt for citation in result.citations] == ["ERR6002 means timeout"]
+    assert result.evidence.level == "low"
 
 
 async def test_combine_context_drops_chunks_below_threshold_and_formats_survivors() -> None:
