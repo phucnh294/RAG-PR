@@ -2,18 +2,20 @@ import { Fragment, useEffect, useState } from "react";
 import { fetchDemoUsers, type UserOut } from "./api/client";
 import { getSelectedUserId, setSelectedUserId } from "./auth/identity";
 import RoleSelector from "./components/RoleSelector";
+import AgentsPage from "./pages/AgentsPage";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import EvalsPage from "./pages/EvalsPage";
 import LogsPage from "./pages/LogsPage";
 
-type Tab = "chat" | "documents" | "logs" | "evals";
+type Tab = "chat" | "documents" | "logs" | "evals" | "agents";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "chat", label: "Chat" },
   { id: "documents", label: "Documents" },
   { id: "logs", label: "Logs" },
   { id: "evals", label: "Evals" },
+  { id: "agents", label: "Agents" },
 ];
 
 const MOBILE_BREAKPOINT_PX = 768;
@@ -123,6 +125,9 @@ export default function App() {
             </div>
             <div hidden={tab !== "evals"}>
               <EvalsPage />
+            </div>
+            <div hidden={tab !== "agents"}>
+              <AgentsPage active={tab === "agents"} />
             </div>
           </Fragment>
         )}

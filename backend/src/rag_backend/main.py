@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from rag_backend.api import (
+    routes_agents,
     routes_auth,
     routes_cache,
     routes_chat,
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_cache.router)
     app.include_router(routes_logs.router)
     app.include_router(routes_eval.router)
+    app.include_router(routes_agents.router)
     return app
 
 

@@ -1,0 +1,123 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --border: #222;
+  --muted: #666;
+  --error: #b3261e;
+  --success-bg: #e8f5e9;
+  --success-border: #2e7d32;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 32px 16px;
+  background: #fafafa;
+  color: #111;
+}
+
+.card {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 40px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 48px;
+}
+
+h1 {
+  margin: 0 0 32px;
+  font-size: 1.25rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.field label {
+  padding-top: 10px;
+  text-align: right;
+}
+
+.control input {
+  width: 100%;
+  max-width: 240px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  font: inherit;
+  text-align: center;
+}
+
+.control input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+
+.field-error {
+  margin: 6px 0 0;
+  color: var(--error);
+  font-size: 0.875rem;
+}
+
+.actions {
+  display: flex;
+  gap: 40px;
+  margin-left: 156px;
+}
+
+.actions button {
+  min-width: 170px;
+  padding: 10px 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.actions button:hover {
+  background: #f0f0f0;
+}
+
+.banner {
+  max-width: 640px;
+  margin: 24px auto 0;
+  padding: 24px 16px;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .card {
+    padding: 24px 16px;
+    border-radius: 24px;
+  }
+  .field {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .field label {
+    padding-top: 0;
+    text-align: left;
+  }
+  .control input {
+    max-width: none;
+  }
+  .actions {
+    margin-left: 0;
+    gap: 12px;
+  }
+  .actions button {
+    min-width: 0;
+    flex: 1;
+  }
+}

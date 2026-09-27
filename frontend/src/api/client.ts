@@ -107,7 +107,7 @@ export async function fetchClassifications(): Promise<ClassificationsOut> {
   return response.json();
 }
 
-export type PipelineName = "retrieval" | "indexing";
+export type PipelineName = "retrieval" | "indexing" | "agents";
 
 export interface LogSummary {
   id: string;
@@ -260,6 +260,232 @@ export async function fetchConversation(conversationId: string): Promise<Convers
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   await apiFetch(`${API_BASE}/conversations/${conversationId}`, { method: "DELETE" });
+}
+
+// --- Agents (UI test-generation pipeline) ---
+
+export type AgentRunStatus = "queued" | "running" | "succeeded" | "failed" | "stale";
+
+export interface AgentModelInfo {
+  provider: string;
+  model: string;
+}
+
+export interface AgentDefaults {
+  target_url: string;
+  requirement: string;
+  allowed_target_hosts: string[];
+  models: Record<string, AgentModelInfo>;
+  max_design_rounds: number;
+  active_run_id: string | null;
+}
+
+export interface AgentStepStatus {
+  name: string;
+  status: string;
+  duration_ms: number | null;
+}
+
+export interface AgentRunSummary {
+  run_id: string;
+  status: AgentRunStatus;
+  created_at: string;
+  finished_at: string | null;
+  username: string | null;
+  target_url: string;
+  current_step: string | null;
+  error: string | null;
+  passed: number | null;
+  total: number | null;
+  steps: AgentStepStatus[];
+}
+
+export interface AgentCheck {
+  name: string;
+  passed: boolean;
+  severity: "error" | "warning";
+  detail: string;
+}
+
+export interface AgentLlmCall {
+  attempt: number;
+  provider: string;
+  model: string;
+  response_format: string;
+  messages: unknown[];
+  raw_response: string | null;
+  parse_error: string | null;
+  validation_errors: unknown;
+  valid?: boolean;
+  error?: string;
+  duration_ms?: number;
+}
+
+export interface AgentStepRecord {
+  status?: string;
+  input?: unknown;
+  input_at?: string;
+  output?: unknown;
+  output_at?: string;
+  duration_ms?: number;
+  checks?: AgentCheck[];
+  llm_calls?: AgentLlmCall[];
+  error?: string;
+  /** This agent's input/output Markdown files (paths inside agents/agents-result/); the
+   * output file is parsed to build the next agent's input. */
+  handoff?: AgentHandoff;
+}
+
+export interface AgentHandoff {
+  input?: string;
+  output?: string;
+  /** Earlier agents' files this step's input was built from. */
+  sources?: string[];
+  /** Folder of files copied next to the output (screenshots, evidence, spec). */
+  files?: string;
+}
+
+export interface ArtifactRef {
+  name: string;
+  bytes: number;
+  sha256: string;
+}
+
+export interface AgentCaseReport {
+  case_id: string;
+  title: string;
+  status: "passed" | "failed" | "error" | "not_run";
+  source_rule_ids: string[];
+  failed_step: number | null;
+  error: string | null;
+}
+
+export interface AgentFailureAnalysis {
+  case_id: string;
+  suspected_cause: "app_defect" | "test_defect" | "environment";
+  explanation: string;
+}
+
+export interface AgentReport {
+  total: number;
+  passed: number;
+  failed: number;
+  errored: number;
+  pass_rate: number;
+  cases: AgentCaseReport[];
+  rule_coverage: Record<string, string[]>;
+  rules_verified: string[];
+  uncovered_rules: string[];
+  dropped_cases: { case_id: string; title: string; reason: string }[];
+  summary: string;
+  failure_analysis: AgentFailureAnalysis[];
+}
+
+export interface AgentStepEvidence {
+  index: number;
+  action: string;
+  value: string | null;
+  status: "passed" | "failed" | "skipped";
+  error: string | null;
+  /** What the browser actually showed: element text, field value, visibility, URL. */
+  observed: string | null;
+  /** Messages visible on the page right after the step (alerts, success banner). */
+  page_messages?: string[];
+  evidence: ArtifactRef | null;
+}
+
+export interface AgentCaseRunResult {
+  case_id: string;
+  status: "passed" | "failed" | "error";
+  duration_ms: number;
+  steps: AgentStepEvidence[];
+  failure_screenshot: ArtifactRef | null;
+  console_errors: string[];
+}
+
+export interface AgentTestCaseSummary {
+  case_id: string;
+  title: string;
+  /** Folder relative to the run folder, e.g. "test-cases/TC-REG-001". */
+  folder: string;
+  verdict: "approved" | "rejected" | null;
+  result: "passed" | "failed" | "error" | null;
+  evidence_count: number;
+}
+
+export interface AgentRunRecord {
+  /** The run folder is pipeline-logs/agents/{log_file_stem}/. */
+  log_file_stem: string;
+  run_id: string;
+  status: AgentRunStatus;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+  target_url: string;
+  requirement: string;
+  models: Record<string, AgentModelInfo>;
+  current_step: string | null;
+  error: string | null;
+  steps: Record<string, AgentStepRecord>;
+  report: AgentReport | null;
+  test_cases?: AgentTestCaseSummary[];
+  design_rounds?: {
+    round: number;
+    designed: string[];
+    approved: string[];
+    rejected: string[];
+    uncovered_rule_ids: string[];
+  }[];
+}
+
+export interface AgentRunDetail {
+  run_id: string;
+  status: AgentRunStatus;
+  record: AgentRunRecord;
+}
+
+export async function fetchAgentDefaults(): Promise<AgentDefaults> {
+  const response = await apiFetch(`${API_BASE}/agents/defaults`);
+  return response.json();
+}
+
+export async function startAgentRun(
+  targetUrl: string,
+  requirement: string,
+): Promise<{ run_id: string; status: AgentRunStatus }> {
+  const response = await apiFetch(`${API_BASE}/agents/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target_url: targetUrl, requirement }),
+  });
+  return response.json();
+}
+
+export async function fetchAgentRuns(): Promise<AgentRunSummary[]> {
+  const response = await apiFetch(`${API_BASE}/agents/runs`);
+  return response.json();
+}
+
+export async function fetchAgentRun(runId: string): Promise<AgentRunDetail> {
+  const response = await apiFetch(`${API_BASE}/agents/runs/${runId}`);
+  return response.json();
+}
+
+/** Artifacts go through apiFetch (not a plain <img src>) because they need the
+ * X-User-Id header: a run's files are only visible to its owner and admins. `name` is the
+ * path inside the run folder, e.g. "test-cases/TC-REG-001/evidence/step-01-goto.png". */
+export async function fetchAgentArtifact(runId: string, name: string): Promise<Blob> {
+  const path = name.split("/").map(encodeURIComponent).join("/");
+  const response = await apiFetch(`${API_BASE}/agents/runs/${runId}/artifacts/${path}`);
+  return response.blob();
+}
+
+/** A per-agent handoff file of a run, `path` relative to agents/agents-result/. */
+export async function fetchAgentHandoff(runId: string, path: string): Promise<Blob> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const response = await apiFetch(`${API_BASE}/agents/runs/${runId}/handoff/${encoded}`);
+  return response.blob();
 }
 
 export { API_BASE };

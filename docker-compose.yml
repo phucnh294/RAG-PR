@@ -67,6 +67,52 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  vision-model:
+    # Small vision-language model (qwen2.5vl:3b by default) for the Agents pipeline's
+    # UI-analysis agent; same Ollama pattern as llm-model. Host port 8002 only for manual
+    # checks (`curl http://localhost:8002/api/tags`); the backend uses the Docker network.
+    build: ./vision-model
+    env_file: .env
+    environment:
+      # Keep the model loaded between agent steps (default is 5m; a cold load on CPU
+      # costs tens of seconds per step).
+      OLLAMA_KEEP_ALIVE: 30m
+    ports:
+      - "8002:11434"
+    volumes:
+      - vision_models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q \"$${VISION_MODEL_NAME:-qwen2.5vl:3b}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: unless-stopped
+
+  myweb:
+    # The Register Account page the Agents pipeline tests (system under test). Static
+    # nginx site at http://localhost:8080/myweb; containers reach it as http://myweb:8080.
+    build: ./myweb
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  test-runner:
+    # Headless Chromium + Playwright behind an internal HTTP API (POST /capture, /run).
+    # Internal only: the backend reaches it at http://test-runner:8080.
+    build: ./test-runner
+    # Chromium needs more than Docker's 64 MB default /dev/shm or tabs crash mid-test.
+    shm_size: 1gb
+    depends_on:
+      - myweb
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   backend:
     build: ./backend
     ports:
@@ -80,6 +126,10 @@ services:
       LLM_BASE_URL: http://llm-model:11434
       EMBEDDING_BASE_URL: http://embedding-model:11434
       RERANKER_BASE_URL: http://reranker-model:8080
+      VISION_BASE_URL: http://vision-model:11434
+      TEST_RUNNER_BASE_URL: http://test-runner:8080
+      # Per-agent input/output handoff files (repo: agents/agents-result/).
+      AGENTS_RESULT_DIR: /app/agents-result
       # postgres container's own port (always 5432), not the 5433 host-mapped port
       # used by external tools like DBeaver.
       POSTGRES_HOST: postgres
@@ -87,6 +137,7 @@ services:
     volumes:
       - ./data/input:/app/data/input
       - ./backend/pipeline-logs:/app/pipeline-logs
+      - ./agents/agents-result:/app/agents-result
     depends_on:
       llm-model:
         condition: service_healthy
@@ -95,6 +146,12 @@ services:
       # Started, not healthy: chat falls back to the hybrid order while the reranker is
       # still downloading its model (or down), so it must not block the backend.
       reranker-model:
+        condition: service_started
+      # Started, not healthy: only the Agents tab needs these, and pulling the vision
+      # model takes minutes on first start — chat must not wait for it.
+      vision-model:
+        condition: service_started
+      test-runner:
         condition: service_started
       postgres:
         condition: service_healthy
@@ -120,4 +177,5 @@ services:
 volumes:
   llm_models:
   embedding_models:
+  vision_models:
   pgdata:

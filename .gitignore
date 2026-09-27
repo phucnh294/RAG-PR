@@ -22,3 +22,8 @@ data/input/*
 # Per-request pipeline log files (see rag_backend.pipeline_logging)
 backend/pipeline-logs/*
 !backend/pipeline-logs/.gitkeep
+
+# Agents handoff files: {agent}/{input,output}/{agent}_task{id}_{datetime}.md
+agents/agents-result/*
+!agents/agents-result/.gitkeep
+backend/agents-result/

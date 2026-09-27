@@ -131,6 +131,68 @@ class Settings(BaseSettings):
     cache_candidate_k: int = 5
     cache_ttl_seconds: int = 86400
 
+    # --- Agents (UI test-generation pipeline, the Agents tab) ---
+    # Vision model for the UI-analysis agent: the local vision-model container (Ollama).
+    # Deliberately NOT tied to llm_provider: with LLM_PROVIDER=google the chat answers go to
+    # Gemini, but agents still run on the local model unless VISION_PROVIDER says otherwise
+    # (set it to "google" to send screenshots to Gemini; the model is GOOGLE_MODEL_NAME).
+    vision_provider: str = "ollama"
+    vision_base_url: str = "http://vision-model:11434"
+    # Ollama model of the vision-model container (also what its entrypoint pulls).
+    vision_model_name: str = "qwen2.5vl:3b"
+    # Gemini model used when vision_provider="google" — same GOOGLE_API_KEY as chat, but
+    # independent of google_model_name, so chat can stay on a cheaper model.
+    vision_google_model_name: str = "gemini-flash-latest"
+    # CPU inference is slow: measured qwen2.5vl:3b in Docker on the dev box at ~7 prompt
+    # tokens/s and ~2.3 generated tokens/s, so one agent call can take 10-20 minutes.
+    vision_request_timeout_seconds: float = 1800.0
+    # Width of the downscaled screenshot the vision model receives (the full-size one is
+    # still saved for humans). A 1280 px capture was ~2000 image tokens; 640 px ~1/4.
+    agents_vision_max_width: int = 640
+    # Text model for the business / test-design / confirmation / validation agents. Unset
+    # -> the vision model above (same provider; qwen2.5vl:3b or the Gemini vision model both
+    # handle text). agents_llm_model_name names an Ollama or a Gemini model depending on
+    # the provider. The main llm_model_name default (0.5B) is too small for these tasks.
+    agents_llm_provider: str | None = None
+    agents_llm_base_url: str | None = None
+    agents_llm_model_name: str | None = None
+    agents_llm_timeout_seconds: float = 1800.0
+    # Ollama context window for agent calls: the prompts carry the DOM element list,
+    # rules and test cases, which overflow Ollama's 2048-token default.
+    agents_num_ctx: int = 8192
+    agents_temperature: float = 0.0
+    # Cap on generated tokens per agent call, so a model that loops can't run for an hour.
+    agents_num_predict: int = 3072
+    # Transient model errors (HTTP 429/5xx, dropped connections) are retried this many
+    # times with exponential backoff (base * 2^n seconds). Gemini returns 503 when a model
+    # is overloaded, and one run makes 5+ calls. Timeouts are not retried.
+    agents_transient_retries: int = 3
+    agents_retry_backoff_seconds: float = 2.0
+    # test-runner container (headless Chromium + Playwright).
+    test_runner_base_url: str = "http://test-runner:8080"
+    test_runner_timeout_seconds: float = 300.0
+    test_runner_step_timeout_ms: int = 5000
+    # Screenshot + observed value after every executed test step, saved per test case
+    # under test-cases/{id}/evidence/. Off -> only the failing step is screenshotted.
+    agents_capture_evidence: bool = True
+    # Per-agent handoff files: {agent}/{input,output}/{agent}_task{id}_{datetime}.md. Each
+    # agent's output file is parsed back from disk to build the next agent's input. In
+    # Docker this is the repo's agents/agents-result/ (bind mount).
+    agents_result_dir: Path = Path("agents-result")
+    # Page the Agents tab tests by default, as the test-runner container sees it.
+    agents_default_target_url: str = "http://myweb:8080/myweb/"
+    # Hosts a run may target. The browser runs inside the Docker network, so an open
+    # target URL would let any user make it fetch internal services (SSRF).
+    agents_allowed_target_hosts: list[str] = ["myweb"]
+    # Test design -> business confirmation rounds: rejected cases are sent back to the
+    # test-design agent with the reasons until approved or this many rounds are used.
+    agents_max_design_rounds: int = 2
+    # Aria snapshot characters sent to the vision model (the element list is always sent).
+    agents_max_dom_chars: int = 2000
+    # A run whose log hasn't been updated for this long is reported as "stale" (the
+    # backend restarted mid-run, or a model call hung past its own timeout).
+    agents_run_timeout_seconds: int = 7200
+
     # Postgres connection. Defaults match .env.example / a local `docker compose up`;
     # postgres_host/port are overridden in docker-compose.yml's backend service to
     # reach the postgres container over the internal Docker network (port 5432 there,

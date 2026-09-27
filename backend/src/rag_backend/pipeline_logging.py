@@ -1,4 +1,4 @@
-"""Writes one JSON file per indexing/retrieval run under pipeline_log_dir.
+"""Writes one JSON file per indexing/retrieval/agents run under pipeline_log_dir.
 
 This is separate from the console logging configured in logging_config.py: the
 console gets a line-by-line trace of step start/end timings, while this module
@@ -44,7 +44,11 @@ class StepRecorder:
     def log_input(self, step_name: str, data: Any) -> None:
         timestamp = datetime.now(UTC).isoformat()
         self._logger.info("%s - %s %s - input: %s", self._process_name, step_name, timestamp, data)
-        self._record["steps"][step_name] = {"input": data, "input_at": timestamp}
+        self._record["steps"][step_name] = {
+            "status": "running",
+            "input": data,
+            "input_at": timestamp,
+        }
         self._started_at[step_name] = time.monotonic()
 
     def log_output(self, step_name: str, data: Any) -> None:
@@ -54,7 +58,32 @@ class StepRecorder:
         duration_ms = round((time.monotonic() - started_at) * 1000, 1) if started_at else 0.0
         self._record["steps"].setdefault(step_name, {})
         self._record["steps"][step_name].update(
-            {"output": data, "output_at": timestamp, "duration_ms": duration_ms}
+            {
+                "status": "succeeded",
+                "output": data,
+                "output_at": timestamp,
+                "duration_ms": duration_ms,
+            }
+        )
+
+    def log_extra(self, step_name: str, key: str, value: Any) -> None:
+        """Attach supporting detail to a step (e.g. every LLM call it made, its checks)
+        without touching its input/output."""
+        self._record["steps"].setdefault(step_name, {})[key] = value
+
+    def append_extra(self, step_name: str, key: str, value: Any) -> None:
+        """Append one item to a list-valued step detail, creating the list on first use."""
+        self._record["steps"].setdefault(step_name, {}).setdefault(key, []).append(value)
+
+    def mark_failed(self, step_name: str, error: str) -> None:
+        timestamp = datetime.now(UTC).isoformat()
+        self._logger.warning(
+            "%s - %s %s - failed: %s", self._process_name, step_name, timestamp, error
+        )
+        started_at = self._started_at.pop(step_name, None)
+        duration_ms = round((time.monotonic() - started_at) * 1000, 1) if started_at else 0.0
+        self._record["steps"].setdefault(step_name, {}).update(
+            {"status": "failed", "error": error, "failed_at": timestamp, "duration_ms": duration_ms}
         )
 
 
@@ -62,7 +91,11 @@ def _write_json(subdir: str, file_stem: str, record: dict[str, Any]) -> None:
     log_dir = settings.pipeline_log_dir / subdir
     log_dir.mkdir(parents=True, exist_ok=True)
     path = log_dir / f"{file_stem}.json"
-    path.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+    # Write-then-rename, so a reader polling a run that is still being written (the
+    # Agents tab) never sees a half-written file.
+    tmp_path = path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+    tmp_path.replace(path)
     logger.info("Wrote pipeline log: %s", path)
 
 
@@ -74,3 +107,9 @@ def write_retrieval_log(record: dict[str, Any]) -> None:
 def write_indexing_log(record: dict[str, Any]) -> None:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")
     _write_json("indexing", f"{timestamp}_{record['document_id']}", record)
+
+
+def new_log_file_stem(run_id: str) -> str:
+    """A "{timestamp}_{id}" stem fixed once per run, for pipelines that rewrite their log
+    as they progress (the agents run folder) instead of writing it once at the end."""
+    return f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%f')}_{run_id}"

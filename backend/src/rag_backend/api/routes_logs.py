@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
+from rag_backend.agents.run_layout import RUN_FILE
 from rag_backend.auth.dependencies import CurrentUserDep
 from rag_backend.auth.models import CurrentUser
 from rag_backend.config import settings
@@ -17,7 +18,7 @@ from rag_backend.schemas.logs import LogDetail, LogSummary
 router = APIRouter(prefix="/logs", tags=["logs"])
 logger = logging.getLogger(__name__)
 
-_PIPELINES = ("retrieval", "indexing")
+_PIPELINES = ("retrieval", "indexing", "agents")
 _MAX_LOGS_RETURNED = 200
 _SUMMARY_MAX_CHARS = 160
 # Log filenames are always "{timestamp}_{uuid}" (see pipeline_logging.py) — enforcing
@@ -35,7 +36,8 @@ def _parse_created_at(file_stem: str) -> str:
 
 
 def _owner_id(pipeline: str, record: dict[str, Any]) -> str | None:
-    """Who a log belongs to: the asker (retrieval) or the uploader (indexing)."""
+    """Who a log belongs to: the asker (retrieval), the uploader (indexing) or whoever
+    started the run (agents)."""
     owner = record.get("user_id") if pipeline == "retrieval" else record.get("created_by")
     return str(owner) if owner else None
 
@@ -50,6 +52,11 @@ def _summarize(pipeline: str, file_stem: str, record: dict[str, Any]) -> LogSumm
     if pipeline == "retrieval":
         summary = str(record.get("user_message", ""))
         username = record.get("username")
+    elif pipeline == "agents":
+        report = record.get("report") or {}
+        result = f" ({report['passed']}/{report['total']} passed)" if report else ""
+        summary = f"{record.get('target_url', '?')} -> {record.get('status', '?')}{result}"
+        username = record.get("created_by_username")
     else:
         summary = f"{record.get('filename', '?')} -> {record.get('status', '?')}"
         username = record.get("created_by_username")
@@ -62,11 +69,25 @@ def _summarize(pipeline: str, file_stem: str, record: dict[str, Any]) -> LogSumm
     )
 
 
-def _read_log_files(pipeline: str) -> list[Path]:
+def _read_log_files(pipeline: str) -> list[tuple[str, Path]]:
+    """(log id, file) pairs. An agents run is a folder whose record is {id}/run.json
+    (see agents/run_layout.py); every other log, and agents runs from before that layout,
+    is a flat {id}.json."""
     log_dir = settings.pipeline_log_dir / pipeline
     if not log_dir.exists():
         return []
-    return list(log_dir.glob("*.json"))
+    files = [(path.stem, path) for path in log_dir.glob("*.json")]
+    if pipeline == "agents":
+        files += [(path.parent.name, path) for path in log_dir.glob(f"*/{RUN_FILE}")]
+    return files
+
+
+def _log_path(pipeline: str, log_id: str) -> Path:
+    log_dir = settings.pipeline_log_dir / pipeline
+    folder_record = log_dir / log_id / RUN_FILE
+    if pipeline == "agents" and folder_record.is_file():
+        return folder_record
+    return log_dir / f"{log_id}.json"
 
 
 @router.get("", response_model=list[LogSummary])
@@ -79,14 +100,14 @@ async def list_logs(
 
     summaries: list[LogSummary] = []
     for name in pipelines:
-        for path in _read_log_files(name):
+        for log_id, path in _read_log_files(name):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 logger.warning("Skipping unreadable pipeline log file: %s", path)
                 continue
             if _can_view(user, name, record):
-                summaries.append(_summarize(name, path.stem, record))
+                summaries.append(_summarize(name, log_id, record))
 
     summaries.sort(key=lambda item: item.id, reverse=True)
     return summaries[:_MAX_LOGS_RETURNED]
@@ -99,7 +120,7 @@ async def get_log(pipeline: str, log_id: str, user: CurrentUserDep) -> LogDetail
     if not _LOG_ID_PATTERN.match(log_id):
         raise HTTPException(status_code=404, detail="Log not found")
 
-    path = settings.pipeline_log_dir / pipeline / f"{log_id}.json"
+    path = _log_path(pipeline, log_id)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Log not found")
 

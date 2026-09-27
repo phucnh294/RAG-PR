@@ -87,3 +87,37 @@ class GuardrailJudgeError(RagBackendError):
     a fail-closed GuardrailVerdict — never propagates to a route handler or produces
     an HTTP error response.
     """
+
+
+class AgentsError(RagBackendError):
+    """Base class for failures in the Agents (UI test-generation) pipeline."""
+
+
+class AgentOutputValidationError(AgentsError):
+    """Raised when an agent's LLM output is still not valid JSON for its contract after
+    the repair retry. The run is marked failed; every attempt stays in the run log."""
+
+
+class TestRunnerError(AgentsError):
+    """Raised when the test-runner container is unreachable, times out, errors, or returns
+    a malformed response."""
+
+    __test__ = False  # not a pytest test class, despite the name
+
+
+class AgentHandoffError(AgentsError):
+    """Raised when an agent's handoff file is missing, unreadable or does not hold a valid
+    payload for the next agent (the chain stops there instead of guessing)."""
+
+
+class AgentRunNotFoundError(AgentsError):
+    """Raised when an agents run id does not exist OR belongs to another user (HTTP 404)."""
+
+
+class AgentRunInProgressError(AgentsError):
+    """Raised when a run is started while another is still running (HTTP 409): the
+    vision model and browser are single-tenant on CPU."""
+
+
+class AgentTargetNotAllowedError(AgentsError):
+    """Raised when a run targets a host outside agents_allowed_target_hosts (HTTP 400)."""
