@@ -4,17 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repository is **greenfield**: no application code, README, Dockerfiles, `docker-compose.yml`, or package manifests exist yet (verified — no `backend/`, `frontend/`, `src/`, `package.json`, `pyproject.toml`, or `requirements.txt`). The only real content today is the `.claude/` documentation/workflow scaffolding described below. The "Target architecture" section is forward-looking guidance for how the project is intended to be built, not a description of existing code — don't assume any of it exists until you've verified it.
+The RAG system is built and runs as Docker services orchestrated by `docker-compose.yml`:
 
-## Target architecture
+- **backend/** — Python FastAPI (`src/rag_backend`), pgvector for embeddings + hybrid search,
+  role-based access, guardrails, reranking, semantic cache, conversations, and the **Agents
+  pipeline** (`rag_backend/agents/`, see below).
+- **frontend/** — React + Vite (tabs: Chat, Documents, Logs, Evals, Agents).
+- **llm-model / embedding-model / vision-model** — Ollama containers (answer LLM, embeddings,
+  and `qwen2.5vl:3b` for the Agents UI-analysis step).
+- **reranker-model** — cross-encoder over a TEI-compatible `/rerank` API.
+- **test-runner** — headless Chromium + Playwright behind `POST /capture` and `POST /run`
+  (internal only). Executes the step DSL; never runs code it receives.
+- **myweb** — static Register Account page at http://localhost:8080/myweb, the system under
+  test for the Agents pipeline. Its rules are stated verbatim in
+  `rag_backend/agents/defaults.py` — change both together.
 
-The intended system is a production RAG pipeline made of three independently containerized services:
+### Agents pipeline
 
-- **Local LLM host** — an LLM served from its own Docker container (model/runtime to be chosen when this is scaffolded).
-- **RAG backend** — Python, using **pgvector** (Postgres + the vector extension) for embedding storage and similarity search.
-- **Frontend UI** — a React application.
-
-Each service is expected to have its own Dockerfile, orchestrated by a `docker-compose.yml` at the repo root once these pieces exist. No folder layout (e.g. `backend/`, `frontend/`) has been decided yet — don't invent one; ask or follow whatever structure is introduced first.
+`rag_backend/agents/pipeline.py` runs, in order: page capture → UI analysis (vision) →
+business rules → test design → business confirmation (rejected cases loop back to design) →
+Playwright execution → test validation. Agents hand over through files: each agent writes
+`agents/agents-result/{agent}/{input,output}/{agent}_task{id}_{datetime}.md` (readable summary,
+✅/❌ result line, and a `<!-- handoff-json -->` JSON block), and the next agent's input is
+parsed back from those output files (`agents/handoff.py`). The run record (`run.json`, with
+every LLM attempt), README, test-case docs and per-step evidence stay in
+`backend/pipeline-logs/agents/{stem}/`, shown in the Agents and Logs tabs.
 
 ## Documentation system (this part is real — follow it now)
 
@@ -49,4 +63,52 @@ Backend (from `backend/`, using its `.venv`):
 Frontend (from `frontend/`): `npm run dev`, `npm run build` (runs `tsc -b` + `vite build`).
 
 Full stack: `docker compose up -d --build` from the repo root (postgres, llm-model,
-embedding-model, reranker-model, backend, frontend). See README.md for ports and env vars.
+embedding-model, reranker-model, vision-model, test-runner, myweb, backend, frontend). See
+README.md for ports and env vars.
+
+test-runner (real Chromium against myweb, also myweb's regression suite):
+`docker compose run --rm test-runner python -m pytest`
+
+
+# Testing Agent Workflow
+
+For UI test-generation work, use agents in this sequence when appropriate:
+
+1. `ui-analysis`
+2. `business-analysis`
+3. `test-design`
+4. `test-automation`
+5. `test-validation`
+
+Do not automatically invoke all agents for every task.
+
+Use:
+- `ui-analysis` when the page structure or behavior must first be understood.
+- `business-analysis` when business behavior needs to be extracted or clarified the test case.
+- `test-design` when scenarios or test cases are needed.
+- `test-automation` when approved test cases should become Playwright code.
+- `test-validation` after execution when results or failures need diagnosis.
+
+For simple fixes to an existing Playwright test, work directly or use only the relevant agent.
+
+Agent outputs must be grounded in available project evidence. Do not invent requirements.
+
+Where outputs cross agent boundaries, prefer structured Markdown or JSON-like structures rather than unstructured narrative.
+
+The workflow is:
+
+UI/DOM/Screenshot
+    ↓
+ui-analysis
+    ↓
+business-analysis
+    ↓
+test-design
+    ↓
+ business-analysis
+    ↓
+test-automation
+    ↓
+Playwright execution
+    ↓
+test-validation

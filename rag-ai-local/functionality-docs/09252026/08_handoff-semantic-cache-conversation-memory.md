@@ -3,7 +3,7 @@ title: Permission-Locked Semantic Cache, Server-Side Conversations and Memory â€
 date: 2026-09-25
 type: session-handoff
 area: retrieval-cache-memory
-status: in-progress
+status: superseded
 session_id: 8e9c6a7b-4d09-40b2-bc10-7e96b1b924be
 tags: [retrieval, semantic-cache, conversations, memory, contextualize, authorization, backend, frontend]
 keywords: [feature/semantic-cache-memory, feature/cross-encoder-rerank, semantic_cache, conversations, conversation_messages, access_scope, count_accessible_documents, CACHE_MIN_SIMILARITY, MEMORY_TURNS_DEFAULT, CONTEXTUALIZE_ENABLED, X-Conversation-Id, step2c_contextualize, step3b_cache_lookup, step9c_cache_store, use_cache, DELETE /cache]

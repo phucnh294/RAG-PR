@@ -36,7 +36,8 @@ so the whole corpus can be chunked + embedded into RAG later:
 - **Code-adjacent / auto-generated** — `.md` that belongs with code or tooling
   and is NOT project knowledge: `backend/`, `frontend/`, `docs/`, `.claude/`
   (commands/requirements), and generated artifacts like
-  `backend/pipeline-logs/**`. These are not part of the RAG corpus.
+  `backend/pipeline-logs/**` and `agents/agents-result/**` (the Agents
+  pipeline's per-agent handoff files). These are not part of the RAG corpus.
 
 If you are about to write a knowledge `.md` anywhere else, STOP — it belongs in
 `rag-ai-local/QandA/` or `rag-ai-local/functionality-docs/`.

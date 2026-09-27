@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Register Account</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Register Account</h1>
+
+      <!-- novalidate: validation messages are rendered as role="alert" elements in the
+           DOM (not browser bubbles), so automated tests can assert them. -->
+      <form id="register-form" data-testid="register-form" novalidate>
+        <div class="field">
+          <label for="firstName">First name *</label>
+          <div class="control">
+            <input id="firstName" name="firstName" type="text" required
+                   autocomplete="given-name" aria-describedby="firstName-error" />
+            <p id="firstName-error" class="field-error" role="alert" hidden></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="lastName">Last name *</label>
+          <div class="control">
+            <input id="lastName" name="lastName" type="text" required
+                   autocomplete="family-name" aria-describedby="lastName-error" />
+            <p id="lastName-error" class="field-error" role="alert" hidden></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="dob">Date of birth</label>
+          <div class="control">
+            <input id="dob" name="dob" type="text" placeholder="DD/MM/YYYY"
+                   inputmode="numeric" aria-describedby="dob-error" />
+            <p id="dob-error" class="field-error" role="alert" hidden></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="email">Email *</label>
+          <div class="control">
+            <input id="email" name="email" type="email" required
+                   autocomplete="email" aria-describedby="email-error" />
+            <p id="email-error" class="field-error" role="alert" hidden></p>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" id="register">Register</button>
+          <button type="button" id="back">Back</button>
+        </div>
+      </form>
+    </main>
+
+    <div id="success-banner" class="banner" role="status" data-testid="success-banner"
+         aria-live="polite" hidden></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -9,7 +9,7 @@ import {
 
 type PipelineFilter = "all" | PipelineName;
 
-const FILTERS: PipelineFilter[] = ["all", "retrieval", "indexing"];
+const FILTERS: PipelineFilter[] = ["all", "retrieval", "indexing", "agents"];
 
 interface LogsPageProps {
   /** True while this tab is shown: the list refreshes each time the tab is opened (new

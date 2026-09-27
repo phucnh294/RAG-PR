@@ -1,0 +1,10 @@
+# playwright MUST match the base image tag in Dockerfile (browsers are pre-installed for
+# that exact version; a mismatch fails at launch with "Executable doesn't exist").
+playwright==1.49.1
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+pytest==8.3.4
+pytest-asyncio==0.24.0
+# Downscales the screenshot sent to the vision model (fewer image tokens on CPU).
+pillow==11.0.0

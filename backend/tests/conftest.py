@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from rag_backend.agents import clients as agent_clients
+from rag_backend.agents import run_store as agents_run_store
+from rag_backend.agents import runner_client as agents_runner_client
 from rag_backend.auth import repository as auth_repository
 from rag_backend.auth import seed as auth_seed
 from rag_backend.auth import service as auth_service
@@ -170,6 +174,7 @@ def _fake_reranker_client(monkeypatch: pytest.MonkeyPatch) -> None:
 def _isolated_pipeline_log_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep per-request pipeline log files out of the real backend/pipeline-logs/."""
     monkeypatch.setattr(settings, "pipeline_log_dir", tmp_path / "pipeline-logs")
+    monkeypatch.setattr(settings, "agents_result_dir", tmp_path / "agents-result")
 
 
 @pytest.fixture(autouse=True)
@@ -180,6 +185,40 @@ def _fake_guardrail_judge_client(monkeypatch: pytest.MonkeyPatch) -> None:
     enabled by default. Guardrail-specific tests override this per-test.
     """
     monkeypatch.setattr(judge_client, "guardrail_judge_client", FakeGuardrailJudgeClient())
+
+
+class _UnconfiguredAgentLlm(LlmClient):
+    """Default agents model double: fails loudly if a test forgets to script it."""
+
+    def __init__(self) -> None:
+        self._provider = "ollama"
+        self._model_name = "unconfigured"
+        self._google_model_name = "unconfigured"
+
+    async def complete_chat(self, messages: Any, **kwargs: Any) -> str:
+        raise AssertionError("agents model called without a scripted fake")
+
+
+class _UnconfiguredRunner(agents_runner_client.TestRunnerClient):
+    def __init__(self) -> None:
+        pass
+
+    async def capture(self, url: str) -> Any:
+        raise AssertionError("test-runner called without a fake")
+
+    async def run(self, base_url: str, cases: Any) -> Any:
+        raise AssertionError("test-runner called without a fake")
+
+
+@pytest.fixture(autouse=True)
+def _fake_agent_clients(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No agents test may reach the vision-model/test-runner containers; tests that run
+    agents install scripted fakes (see tests/agents/fakes.py). Also clears the
+    one-run-at-a-time guard so a failed test can't block the next one."""
+    monkeypatch.setattr(agent_clients, "vision_client", _UnconfiguredAgentLlm())
+    monkeypatch.setattr(agent_clients, "agents_text_client", _UnconfiguredAgentLlm())
+    monkeypatch.setattr(agents_runner_client, "test_runner_client", _UnconfiguredRunner())
+    monkeypatch.setattr(agents_run_store, "_active_run_id", None)
 
 
 def _usernames_by_role() -> dict[str, str]:
